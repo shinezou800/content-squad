@@ -1,4 +1,4 @@
-import { defaults } from './data/market';
+import { defaults, legacyDefaultPool, poolCodes } from './data/market';
 export type Settings = { key: string; model: string; pool: string };
 export const defaultSettings: Settings = {
   key: '',
@@ -7,11 +7,22 @@ export const defaultSettings: Settings = {
 };
 export function loadSettings(): Settings {
   try {
-    return { ...defaultSettings, ...JSON.parse(localStorage.getItem('squad-settings') || '{}') };
+    const settings: Settings = {
+      ...defaultSettings,
+      ...JSON.parse(localStorage.getItem('squad-settings') || '{}'),
+    };
+    if (settings.pool === legacyDefaultPool) {
+      settings.pool = defaults;
+      try {
+        saveSettings(settings);
+      } catch {}
+    }
+    return settings;
   } catch {
     return defaultSettings;
   }
 }
 export function saveSettings(value: Settings) {
+  poolCodes(value.pool);
   localStorage.setItem('squad-settings', JSON.stringify(value));
 }

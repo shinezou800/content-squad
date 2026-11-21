@@ -15,6 +15,117 @@ const snapshot: Snapshot = [
 const wrap = (text: string) =>
   `⚠️ 模拟盘记录。${text}\n持仓披露：未提供。\n非投资建议。数据来源：腾讯行情、东方财富。`;
 describe('确定性核对', () => {
+  it.each([
+    ['600309', '万华化学'],
+    ['000002', '万科'],
+    ['300014', '亿纬锂能'],
+    ['00883', '中海油'],
+  ])('股票名开头的万/亿不作为代码的单位：%s %s', (code, name) => {
+    const data: Snapshot = [{ code, name, fields: [] }];
+    expect(checkDraft(wrap(`${code} ${name}`), data)).toEqual([]);
+    expect(checkDraft(wrap(`${code}${name}`), data)).toEqual([]);
+  });
+  it.each([
+    ['2000亿', 2000e8],
+    ['收入2000亿的公司', 2000e8],
+    ['收入2000亿左右', 2000e8],
+    ['3.5万亿元', 3.5e12],
+    ['12万股', 12e4],
+    ['600309亿元', 600309e8],
+  ])('正常数量单位仍换算：%s', (text, value) => {
+    const data: Snapshot = [
+      {
+        code: '600309',
+        name: '万华化学',
+        fields: [
+          {
+            label: '数值',
+            value,
+            unit: text.endsWith('元') ? '元' : undefined,
+            source: '测试',
+            fetchedAt: '今天',
+          },
+        ],
+      },
+    ];
+    expect(checkDraft(wrap(text), data)).toEqual([]);
+    for (const wrongValue of [value / 10000, Number(text.match(/\d+(?:\.\d+)?/)![0])]) {
+      const wrong: Snapshot = [
+        { ...data[0], fields: [{ ...data[0].fields[0], value: wrongValue }] },
+      ];
+      expect(checkDraft(wrap(text), wrong).some((f) => f.问题.startsWith('数字未在快照'))).toBe(
+        true,
+      );
+    }
+  });
+  it.each(['元', ' 元', '人民币元', ' 人民币', ' RMB', ' rmb'])(
+    '港元快照拒绝人民币变体：%s',
+    (suffix) => {
+      const data: Snapshot = [
+        {
+          code: '00883',
+          name: '中海油',
+          fields: [{ label: '现价', value: 21.7, unit: '港元', source: '腾讯', fetchedAt: '今天' }],
+        },
+      ];
+      expect(
+        checkDraft(wrap(`21.7${suffix}`), data).some((f) => f.问题.startsWith('数字未在快照')),
+      ).toBe(true);
+    },
+  );
+  it.each(['港元', ' 港元', '港币', ' 港币', ' HKD', ' hkd'])(
+    '港元快照接受港元变体：%s',
+    (suffix) => {
+      const data: Snapshot = [
+        {
+          code: '00883',
+          name: '中海油',
+          fields: [{ label: '现价', value: 21.7, unit: '港元', source: '腾讯', fetchedAt: '今天' }],
+        },
+      ];
+      expect(checkDraft(wrap(`21.7${suffix}`), data)).toEqual([]);
+    },
+  );
+  it.each(['元', '人民币', '人民币元', 'RMB', '港元', '港币', 'HKD'])(
+    '快照单位及字符串也归一化：%s',
+    (unit) => {
+      const hk = ['港元', '港币', 'HKD'].includes(unit);
+      for (const field of [{ value: 21.7, unit }, { value: `21.7 ${unit}` }]) {
+        const data: Snapshot = [
+          {
+            code: '00883',
+            name: '股票',
+            fields: [{ label: '现价', ...field, source: '腾讯', fetchedAt: '今天' }],
+          },
+        ];
+        expect(checkDraft(wrap(`21.7 ${hk ? 'HKD' : 'RMB'}`), data)).toEqual([]);
+        expect(
+          checkDraft(wrap(`21.7 ${hk ? 'RMB' : 'HKD'}`), data).some((f) =>
+            f.问题.startsWith('数字未在快照'),
+          ),
+        ).toBe(true);
+      }
+    },
+  );
+  it.each([
+    [21.7, '港元', '21.7港元', '21.7元'],
+    [21.7, '元', '21.7元', '21.7港元'],
+    [10314, '亿港元', '10314亿港元', '10314亿元'],
+    ['21.7港元', undefined, '21.7港元', '21.7元'],
+  ])('人民币与港元不能混用：%s %s', (value, unit, matching, wrong) => {
+    const data: Snapshot = [
+      {
+        code: '00883',
+        name: '中海油',
+        fields: [
+          { label: '价格或市值', value, unit, source: '腾讯', fetchedAt: '今天' },
+          { label: '无币种同值', value: 21.7, unit: '倍', source: '腾讯', fetchedAt: '今天' },
+        ],
+      },
+    ];
+    expect(checkDraft(wrap(matching), data)).toEqual([]);
+    expect(checkDraft(wrap(wrong), data).some((f) => f.问题.startsWith('数字未在快照'))).toBe(true);
+  });
   it.each(['30元-40元', '30-40', '30%-40%', '30倍-40倍', '30元 -40元', '30 -40'])(
     '范围连接符不作为负号：%s',
     (range) => {
