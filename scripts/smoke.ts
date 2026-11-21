@@ -1,30 +1,32 @@
-import {
-  parseQuotes,
-  parseFinancial,
-  dividendYield,
-  eastUrl,
-  getJson,
-} from '../src/data/market.ts';
-const codes = ['601088', '000895', '600900'];
-const response = await fetch('https://qt.gtimg.cn/q=sh601088,sz000895,sh600900');
-if (!response.ok) throw new Error(`行情请求失败 ${response.status}`);
-const rows = parseQuotes(new TextDecoder('gbk').decode(await response.arrayBuffer()));
-if (rows.length !== codes.length) throw new Error('行情数量不匹配');
-for (const row of rows) {
-  const finance = parseFinancial(
-    await getJson(
-      eastUrl(
-        'RPT_F10_FINANCE_MAINFINADATA',
-        row[2],
-        'SECURITY_CODE,REPORT_DATE_NAME,TOTALOPERATEREVE,PARENTNETPROFIT,EPSJB,ROEJQ',
-        1,
-      ),
-    ),
+import { defaults, fetchSnapshot, poolCodes } from '../src/data/market.ts';
+const codes = process.argv.length > 2 ? process.argv.slice(2) : poolCodes(defaults);
+const snapshot = await fetchSnapshot(codes);
+console.log('| 代码 | 名称 | 价格 | 币种 | 计算股息率 | 财务数据 |');
+console.log('| --- | --- | --- | --- | --- | --- |');
+for (const stock of snapshot) {
+  const field = (label: string) => stock.fields.find((f) => f.label === label);
+  const yieldField = field('股息率（近十二月已实施分红÷现价）')!;
+  const financials = stock.fields.filter((f) =>
+    [
+      '报告期',
+      '营业收入',
+      '归母净利润',
+      '每股收益',
+      '净资产收益率',
+      '净资产收益率（平均）',
+    ].includes(f.label),
   );
-  const div = dividendYield(await getJson(eastUrl('RPT_SHAREBONUS_DET', row[2])), Number(row[3]));
-  if (!finance.REPORT_DATE_NAME || !Number.isFinite(div.yield)) throw new Error('解析结果不完整');
   console.log(
-    `${row[2]} ${row[1]} | 现价 ${row[3]} | 腾讯字段64 ${row[64]}% | 近十二月税前每股分红 ${div.cash.toFixed(4)}元 | 计算股息率 ${div.yield.toFixed(4)}% | ${finance.REPORT_DATE_NAME} 营收 ${finance.TOTALOPERATEREVE} 归母净利润 ${finance.PARENTNETPROFIT} EPS ${finance.EPSJB} ROE ${finance.ROEJQ}`,
+    `| ${stock.code} | ${stock.name} | ${field('现价')!.value} | ${field('现价')!.unit} | ${typeof yieldField.value === 'number' ? yieldField.value.toFixed(4) + '%' : '缺失'} | ${financials.map((f) => `${f.label}:${f.value}${typeof f.value === 'number' ? f.unit : ''}`).join('；')} |`,
   );
+  const missing = stock.fields.filter(
+    (f) => typeof f.value === 'string' && f.value.startsWith('缺失'),
+  );
+  if (missing.length)
+    console.log(
+      `缺失字段 ${stock.code}：${missing.map((f) => `${f.label}=${f.value}`).join('；')}`,
+    );
 }
-console.log('真实接口烟测通过：3只股票的腾讯GBK行情、东方财富财报和分红解析完成。');
+console.log(
+  `真实接口烟测通过：${snapshot.length}只股票的报价及财报解析完成；未核实的港股分红不作推算。`,
+);

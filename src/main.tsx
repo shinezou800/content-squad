@@ -103,10 +103,11 @@ function App() {
   }
   async function start() {
     if (lock.current || !authReady) return;
+    const runSettings = loadSettings();
     try {
       if (!topic.trim()) throw new Error('先写下这次想聊的选题。');
-      if (!settings.key.trim()) throw new Error('请先在设置中填写 OpenRouter API 密钥。');
-      poolCodes(settings.pool);
+      if (!runSettings.key.trim()) throw new Error('请先在设置中填写并保存 OpenRouter API 密钥。');
+      poolCodes(runSettings.pool);
     } catch (e) {
       setMessage((e as Error).message);
       return;
@@ -115,7 +116,7 @@ function App() {
     setBusy(true);
     setMessage('');
     try {
-      const next = await runPipeline(squad, topic.trim(), settings, (progress) => {
+      const next = await runPipeline(squad, topic.trim(), runSettings, (progress) => {
         if (activeStorage.current === storage) setRun(progress);
       });
       if (activeStorage.current !== storage) {
@@ -314,12 +315,16 @@ function App() {
                       数据快照 <span className="subtle">所有数字的共同底稿</span>
                     </h2>
                     <p className="subtle">
+                      本次运行的归档快照；修改股票池后需重新运行，不会改写历史记录。
                       股息率采用近十二月已实施税前现金分红 ÷ 腾讯现价；行情时间与抓取时间可能不同。
                     </p>
                     {run.snapshot.map((stock) => (
                       <details key={stock.code}>
                         <summary>
-                          {stock.name} <span className="subtle">{stock.code} · 展开来源明细</span>
+                          {stock.name}{' '}
+                          <span className="subtle">
+                            {stock.code} · {stock.category ?? '未标记'} · 展开来源明细
+                          </span>
                         </summary>
                         <div className="table-scroll">
                           <table>
@@ -338,7 +343,7 @@ function App() {
                                     {typeof f.value === 'number'
                                       ? Number(f.value.toFixed(4)).toLocaleString('zh-CN')
                                       : f.value}
-                                    {f.unit}
+                                    {typeof f.value === 'number' ? f.unit : ''}
                                   </td>
                                   <td>
                                     <a
@@ -447,13 +452,20 @@ function App() {
               className="panel settings"
               onSubmit={(e) => {
                 e.preventDefault();
+                if (busy) return;
                 setSettingsSaveError('');
                 setMessage('');
                 try {
                   poolCodes(settings.pool);
                   if (!settings.model.trim()) throw new Error('请填写模型名称。');
+                  const poolChanged = loadSettings().pool !== settings.pool;
                   saveSettings(settings);
-                  setMessage('设置已保存在此浏览器。');
+                  if (poolChanged) setRun(undefined);
+                  setMessage(
+                    poolChanged
+                      ? '设置已保存。旧快照已收起，请重新运行以使用新股票池。'
+                      : '设置已保存在此浏览器。',
+                  );
                 } catch (e) {
                   setSettingsSaveError((e as Error).message);
                 }
@@ -501,15 +513,17 @@ function App() {
               <p className="subtle">免费模型的可用性由服务方决定，可在此填写其他模型标识。</p>
               <hr />
               <h2>观察池记录</h2>
-              <label htmlFor="pool">股票池 · 每行一个代码与名称</label>
+              <label htmlFor="pool">股票池 · 每行代码、名称、持仓或观察池</label>
               <textarea
                 id="pool"
                 rows={14}
                 value={settings.pool}
+                disabled={busy}
                 onChange={(e) => setSettings({ ...settings, pool: e.target.value })}
               />
               <p className="subtle">
-                默认十四只 A 股。每次运行获取整个股票池的数据，不代表持仓或推荐。
+                默认四只持仓、十只观察股。A 股用六位代码，港股用五位代码（如
+                00883），港股行情以港元计。每行末尾可标记“持仓”或“观察池”；未标记时视为观察池。保存后，新运行仅抓取此列表。
               </p>
               {settingsSaveError && (
                 <p id="settings-save-error" className="error" role="alert">
@@ -519,6 +533,7 @@ function App() {
               <button
                 className="primary"
                 type="submit"
+                disabled={busy}
                 aria-describedby={settingsSaveError ? 'settings-save-error' : undefined}
               >
                 保存本地设置

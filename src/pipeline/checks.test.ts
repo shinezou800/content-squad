@@ -15,6 +15,25 @@ const snapshot: Snapshot = [
 const wrap = (text: string) =>
   `⚠️ 模拟盘记录。${text}\n持仓披露：未提供。\n非投资建议。数据来源：腾讯行情、东方财富。`;
 describe('确定性核对', () => {
+  it.each([
+    [21.7, '港元', '21.7港元', '21.7元'],
+    [21.7, '元', '21.7元', '21.7港元'],
+    [10314, '亿港元', '10314亿港元', '10314亿元'],
+    ['21.7港元', undefined, '21.7港元', '21.7元'],
+  ])('人民币与港元不能混用：%s %s', (value, unit, matching, wrong) => {
+    const data: Snapshot = [
+      {
+        code: '00883',
+        name: '中海油',
+        fields: [
+          { label: '价格或市值', value, unit, source: '腾讯', fetchedAt: '今天' },
+          { label: '无币种同值', value: 21.7, unit: '倍', source: '腾讯', fetchedAt: '今天' },
+        ],
+      },
+    ];
+    expect(checkDraft(wrap(matching), data)).toEqual([]);
+    expect(checkDraft(wrap(wrong), data).some((f) => f.问题.startsWith('数字未在快照'))).toBe(true);
+  });
   it.each(['30元-40元', '30-40', '30%-40%', '30倍-40倍', '30元 -40元', '30 -40'])(
     '范围连接符不作为负号：%s',
     (range) => {

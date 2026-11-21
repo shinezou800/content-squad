@@ -1,5 +1,5 @@
 import type { Squad } from './types';
-import { fetchSnapshot, poolCodes } from '../data/market';
+import { fetchSnapshot, poolEntries } from '../data/market';
 import { complete } from '../pipeline/llm';
 import { checkDraft } from '../pipeline/checks';
 const squad: Squad = {
@@ -13,7 +13,12 @@ const squad: Squad = {
       name: '小数',
       title: '数据研究员',
       async run(ctx) {
-        ctx.snapshot = await fetchSnapshot(poolCodes(ctx.settings.pool));
+        const entries = poolEntries(ctx.settings.pool);
+        const snapshot = await fetchSnapshot(entries.map((entry) => entry.code));
+        ctx.snapshot = snapshot.map((stock) => ({
+          ...stock,
+          category: entries.find((entry) => entry.code === stock.code)!.category,
+        }));
         return complete(
           ctx.settings,
           '你是小数。根据选题，从快照选择相关事实写简短数据简报。只能使用快照数字，不得猜测、补全或使用记忆数据。明确报告期、分红口径和来源。',
@@ -28,7 +33,7 @@ const squad: Squad = {
       run(ctx) {
         return complete(
           ctx.settings,
-          '你是小稿。第一人称记录口吻；开篇注明模拟盘记录；不用建议、应该、补、买等指向读者的词；观察写“观察池记录”；算账写“情景演算、不是买入计划、更不推荐跟风”；开篇⚠️前置声明 + 结尾双披露（持仓披露 + 非投资建议/数据来源披露）。开头100字内有模拟盘记录，最后400字内有“持仓披露：”及“非投资建议。数据来源：”。持仓未知时写未提供，不得虚构。只能使用快照中的数字和事实，不用序号或额外数字。输出可直接发表的正文。',
+          '你是小稿。第一人称记录口吻；开篇注明模拟盘记录；不用建议、应该、补、买等指向读者的词；观察写“观察池记录”；算账写“情景演算、不是买入计划、更不推荐跟风”；开篇⚠️前置声明 + 结尾双披露（持仓披露 + 非投资建议/数据来源披露）。开头100字内有模拟盘记录，最后400字内有“持仓披露：”及“非投资建议。数据来源：”。快照 category 为持仓时才可披露为持仓，为观察池时仅作观察池记录；分类由主理人提供，不得推断股数、成本或仓位。持仓未知时写未提供，不得虚构。只能使用快照中的数字和事实，不用序号或额外数字。缺失字段不得当作零或补全；港元和人民币元必须保留各自币种，不得混用或自行换汇。输出可直接发表的正文。',
           JSON.stringify({ topic: ctx.topic, snapshot: ctx.snapshot, brief: ctx.outputs.data }),
         );
       },

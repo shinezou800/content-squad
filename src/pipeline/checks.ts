@@ -1,7 +1,16 @@
 import type { Snapshot } from '../data/market';
 export type Flag = { 原文: string; 问题: string; 数据源值: string };
 const numberPattern =
-  /(?<!\d)((?:(?<![\d元%％亿万千百倍股]\s*)[+-])?\d[\d,]*(?:\.\d+)?)(万亿|亿|万)?/g;
+  /(?<!\d)((?:(?<![\d元%％亿万千百倍股]\s*)[+-])?\d[\d,]*(?:\.\d+)?)(万亿|亿|万)?(港元|元)?/g;
+function currencyOf(unit = '') {
+  return unit.includes('港元')
+    ? 'HKD'
+    : unit.includes('元')
+      ? 'CNY'
+      : unit
+        ? 'non-monetary'
+        : undefined;
+}
 function unitScale(unit = ''): number {
   return unit.startsWith('万亿')
     ? 1e12
@@ -24,14 +33,21 @@ export function checkDraft(draft: string, snapshot: Snapshot): Flag[] {
   if (!/持仓披露[：:]/.test(closing)) add('', '结尾缺少持仓披露');
   if (!/非投资建议/.test(closing) || !/数据来源[：:]/.test(closing))
     add('', '结尾缺少非投资建议及数据来源披露');
-  const values: number[] = [];
+  const values: { value: number; currency?: string }[] = [];
   for (const stock of snapshot) {
-    values.push(Number(stock.code));
+    values.push({ value: Number(stock.code), currency: 'non-monetary' });
     for (const field of stock.fields) {
-      if (typeof field.value === 'number') values.push(field.value * unitScale(field.unit));
+      if (typeof field.value === 'number')
+        values.push({
+          value: field.value * unitScale(field.unit),
+          currency: currencyOf(field.unit),
+        });
       else
         for (const m of field.value.matchAll(numberPattern))
-          values.push(Number(m[1].replaceAll(',', '')) * unitScale(m[2] || field.unit));
+          values.push({
+            value: Number(m[1].replaceAll(',', '')) * unitScale(m[2] || field.unit),
+            currency: currencyOf(m[3] || field.unit),
+          });
     }
   }
   for (const m of draft.matchAll(numberPattern)) {
@@ -40,8 +56,19 @@ export function checkDraft(draft: string, snapshot: Snapshot): Flag[] {
     const n = raw * scale;
     const digits = m[1].split('.')[1]?.length || 0;
     const tolerance = 0.5 * 10 ** -digits * scale + 1e-8;
-    if (!values.some((v) => Math.abs(v - n) <= tolerance))
-      add(m[0], '数字未在快照中找到（已容许四舍五入及万/亿单位）', '请对照数据快照');
+    const currency = currencyOf(m[3]);
+    if (
+      !values.some(
+        (v) =>
+          (!currency || !v.currency || currency === v.currency) &&
+          Math.abs(v.value - n) <= tolerance,
+      )
+    )
+      add(
+        m[1] + (m[2] ?? ''),
+        '数字未在快照中找到（已容许四舍五入及万/亿单位，币种须一致）',
+        '请对照数据快照',
+      );
   }
   return flags;
 }
