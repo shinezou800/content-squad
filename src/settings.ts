@@ -1,4 +1,4 @@
-import { defaults, legacyDefaultPool, poolCodes } from './data/market';
+import { defaults, legacyDefaultPool, previousDefaultPool, poolCodes } from './data/market';
 export type Settings = { key: string; model: string; pool: string };
 export const defaultSettings: Settings = {
   key: '',
@@ -11,7 +11,7 @@ export function loadSettings(): Settings {
       ...defaultSettings,
       ...JSON.parse(localStorage.getItem('squad-settings') || '{}'),
     };
-    if (settings.pool === legacyDefaultPool) {
+    if (settings.pool === legacyDefaultPool || settings.pool === previousDefaultPool) {
       settings.pool = defaults;
       try {
         saveSettings(settings);

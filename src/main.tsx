@@ -316,7 +316,8 @@ function App() {
                     </h2>
                     <p className="subtle">
                       本次运行的归档快照；修改股票池后需重新运行，不会改写历史记录。
-                      股息率采用近十二月已实施税前现金分红 ÷ 腾讯现价；行情时间与抓取时间可能不同。
+                      股息率采用近十二月每股现金分红 ÷
+                      腾讯现价；手动分红标为“主人手动提供”，不代表接口核实。行情时间与抓取时间可能不同。
                     </p>
                     {run.snapshot.map((stock) => (
                       <details key={stock.code}>
@@ -346,15 +347,25 @@ function App() {
                                     {typeof f.value === 'number' ? f.unit : ''}
                                   </td>
                                   <td>
-                                    <a
-                                      href={f.source.split('；')[0]}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                    >
-                                      {f.source.includes('gtimg') && !f.source.includes('eastmoney')
-                                        ? '腾讯行情'
-                                        : '东方财富'}
-                                    </a>
+                                    {f.source.startsWith('主人手动提供') ? (
+                                      <span>
+                                        主人手动提供
+                                        {f.source.includes('；价格来源：')
+                                          ? '；现价：腾讯行情'
+                                          : ''}
+                                      </span>
+                                    ) : (
+                                      <a
+                                        href={f.source.split('；')[0]}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                      >
+                                        {f.source.includes('gtimg') &&
+                                        !f.source.includes('eastmoney')
+                                          ? '腾讯行情'
+                                          : '东方财富'}
+                                      </a>
+                                    )}
                                     <small>{new Date(f.fetchedAt).toLocaleString('zh-CN')}</small>
                                   </td>
                                 </tr>
@@ -524,6 +535,7 @@ function App() {
               <p className="subtle">
                 默认四只持仓、十只观察股。A 股用六位代码，港股用五位代码（如
                 00883），港股行情以港元计。每行末尾可标记“持仓”或“观察池”；未标记时视为观察池。保存后，新运行仅抓取此列表。
+                可附加“分红TTM=1.49港元”覆盖近十二月每股现金分红，币种须与行情一致；来源标为“主人手动提供”。默认中海油使用此数值。
               </p>
               {settingsSaveError && (
                 <p id="settings-save-error" className="error" role="alert">

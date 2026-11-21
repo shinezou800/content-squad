@@ -3,10 +3,56 @@ import { registry } from './registry';
 import { runPipeline } from '../pipeline/runner';
 import { loadSettings, saveSettings } from '../settings';
 import { complete } from '../pipeline/llm';
+import { checkDraft } from '../pipeline/checks';
 vi.mock('../pipeline/llm', () => ({ complete: vi.fn().mockResolvedValue('正文') }));
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.clearAllMocks();
+});
+it('主人提供的港元TTM金额及推算股息率进入小稿和小核快照，并可作确定性核对事实', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) => {
+      if (url.includes('gtimg')) {
+        const fields = Array(65).fill('');
+        fields[1] = 'CNOOC';
+        fields[2] = '00883';
+        fields[3] = '21.7';
+        return {
+          ok: true,
+          arrayBuffer: async () =>
+            new TextEncoder().encode(`v_hk00883="${fields.join('~')}";`).buffer,
+        };
+      }
+      return { ok: true, json: async () => ({ success: false }) };
+    }),
+  );
+  const run = await runPipeline(
+    registry['zangu-shouxi'],
+    '记录分红',
+    { key: 'test', model: 'test', pool: '00883 中海油 观察池 分红TTM=1.49港元' },
+    () => {},
+  );
+  expect(run.steps.every((step) => step.status === 'done')).toBe(true);
+  for (const call of vi.mocked(complete).mock.calls) {
+    const payload = JSON.parse(call[2]);
+    const cash = payload.snapshot[0].fields.find((f: { label: string }) =>
+      f.label.startsWith('近十二月每股现金分红'),
+    );
+    expect(cash).toMatchObject({ value: 1.49, unit: '港元', source: '主人手动提供' });
+    expect(
+      payload.snapshot[0].fields.find((f: { label: string }) => f.label.startsWith('股息率')).value,
+    ).toBeCloseTo((1.49 / 21.7) * 100);
+  }
+  expect(vi.mocked(complete)).toHaveBeenCalledTimes(3);
+  expect(
+    checkDraft('每股分红1.49港元', run.snapshot).some((flag) =>
+      flag.问题.startsWith('数字未在快照'),
+    ),
+  ).toBe(false);
+  expect(
+    checkDraft('每股分红1.49元', run.snapshot).some((flag) => flag.问题.startsWith('数字未在快照')),
+  ).toBe(true);
 });
 it('已保存的自定义池完整传入流水线及真实解析器，只请求池内代码，传递持仓分类', async () => {
   let raw = '';

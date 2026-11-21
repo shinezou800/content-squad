@@ -14,7 +14,14 @@ const squad: Squad = {
       title: '数据研究员',
       async run(ctx) {
         const entries = poolEntries(ctx.settings.pool);
-        const snapshot = await fetchSnapshot(entries.map((entry) => entry.code));
+        const snapshot = await fetchSnapshot(
+          entries.map((entry) => entry.code),
+          Object.fromEntries(
+            entries
+              .filter((entry) => entry.manualDividend !== undefined)
+              .map((entry) => [entry.code, entry.manualDividend!]),
+          ),
+        );
         ctx.snapshot = snapshot.map((stock) => ({
           ...stock,
           category: entries.find((entry) => entry.code === stock.code)!.category,
@@ -45,7 +52,7 @@ const squad: Squad = {
       async run(ctx) {
         const result = await complete(
           ctx.settings,
-          '逐项核对正文每个数字和事实与快照是否一致。输出JSON列表，每项字段为原文、问题、数据源值。无问题输出[]。不可把快照没有的数据当作事实。',
+          '逐项核对正文每个数字和事实与快照是否一致。输出JSON列表，每项字段为原文、问题、数据源值。无问题输出[]。不可把快照没有的数据当作事实。来源为“主人手动提供”的字段也是快照事实，须保留来源及币种，不可称为接口核实或自行补充税前口径。',
           JSON.stringify({ draft: ctx.outputs.draft, snapshot: ctx.snapshot }),
         );
         return `【规则核对】\n${JSON.stringify(checkDraft(ctx.outputs.draft, ctx.snapshot), null, 2)}\n\n【模型事实核对】\n${result}`;
