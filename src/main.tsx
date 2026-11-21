@@ -16,6 +16,7 @@ function App() {
   const [history, setHistory] = useState<Run[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const [settingsSaveError, setSettingsSaveError] = useState('');
   const [models, setModels] = useState<string[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const lock = useRef(false);
@@ -361,13 +362,15 @@ function App() {
               className="panel settings"
               onSubmit={(e) => {
                 e.preventDefault();
+                setSettingsSaveError('');
+                setMessage('');
                 try {
                   poolCodes(settings.pool);
                   if (!settings.model.trim()) throw new Error('请填写模型名称。');
                   saveSettings(settings);
                   setMessage('设置已保存在此浏览器。');
                 } catch (e) {
-                  setMessage((e as Error).message);
+                  setSettingsSaveError((e as Error).message);
                 }
               }}
             >
@@ -423,7 +426,16 @@ function App() {
               <p className="subtle">
                 默认十四只 A 股。每次运行获取整个股票池的数据，不代表持仓或推荐。
               </p>
-              <button className="primary" type="submit">
+              {settingsSaveError && (
+                <p id="settings-save-error" className="error" role="alert">
+                  {settingsSaveError}
+                </p>
+              )}
+              <button
+                className="primary"
+                type="submit"
+                aria-describedby={settingsSaveError ? 'settings-save-error' : undefined}
+              >
                 保存本地设置
               </button>
             </form>
