@@ -1,7 +1,7 @@
 import type { Snapshot } from '../data/market';
 export type Flag = { 原文: string; 问题: string; 数据源值: string };
 const numberPattern =
-  /(?<!\d)((?:(?<![\d元%％亿万千百倍股]\s*)[+-])?\d[\d,]*(?:\.\d+)?)(?:\s*(万亿|亿|万))?(?:\s*(人民币元|人民币|RMB|港元|港币|HKD|元))?/gi;
+  /(?<!\d)((?:(?<![\d元%％亿万千百倍股]\s*)[+-])?\d[\d,]*(?:\.\d+)?)(?:\s*(万亿|亿|万)(?=元|股|港元|港币|人民币|[^\u3400-\u9fff]|$))?(?:\s*(人民币元|人民币|RMB|港元|港币|HKD|元))?/gi;
 function currencyOf(unit = '') {
   return /港元|港币|HKD/i.test(unit)
     ? 'HKD'

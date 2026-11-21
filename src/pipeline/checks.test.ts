@@ -15,6 +15,41 @@ const snapshot: Snapshot = [
 const wrap = (text: string) =>
   `⚠️ 模拟盘记录。${text}\n持仓披露：未提供。\n非投资建议。数据来源：腾讯行情、东方财富。`;
 describe('确定性核对', () => {
+  it.each([
+    ['600309', '万华化学'],
+    ['000002', '万科'],
+    ['300014', '亿纬锂能'],
+  ])('股票名开头的万/亿不作为代码的单位：%s %s', (code, name) => {
+    const data: Snapshot = [{ code, name, fields: [] }];
+    expect(checkDraft(wrap(`${code} ${name}`), data)).toEqual([]);
+    expect(checkDraft(wrap(`${code}${name}`), data)).toEqual([]);
+  });
+  it.each([
+    ['2000亿', 2000e8],
+    ['3.5万亿元', 3.5e12],
+    ['12万股', 12e4],
+  ])('正常数量单位仍换算：%s', (text, value) => {
+    const data: Snapshot = [
+      {
+        code: '600309',
+        name: '万华化学',
+        fields: [
+          {
+            label: '数值',
+            value,
+            unit: text.endsWith('元') ? '元' : undefined,
+            source: '测试',
+            fetchedAt: '今天',
+          },
+        ],
+      },
+    ];
+    expect(checkDraft(wrap(text), data)).toEqual([]);
+    const wrong: Snapshot = [
+      { ...data[0], fields: [{ ...data[0].fields[0], value: value / 10000 }] },
+    ];
+    expect(checkDraft(wrap(text), wrong).some((f) => f.问题.startsWith('数字未在快照'))).toBe(true);
+  });
   it.each(['元', ' 元', '人民币元', ' 人民币', ' RMB', ' rmb'])(
     '港元快照拒绝人民币变体：%s',
     (suffix) => {
