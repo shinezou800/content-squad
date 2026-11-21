@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { defaultSettings, loadSettings, saveSettings } from './settings';
-import { defaults, legacyDefaultPool, poolCodes, poolEntries } from './data/market';
+import {
+  defaults,
+  legacyDefaultPool,
+  previousDefaultPool,
+  poolCodes,
+  poolEntries,
+} from './data/market';
 let stored: Map<string, string>;
 beforeEach(() => {
   stored = new Map();
@@ -33,19 +39,27 @@ it('默认池严格为四只持仓及十只观察股，保持顺序及港股前�
   ]);
   expect(loadSettings()).toEqual(defaultSettings);
 });
-it('仅精确匹配旧默认池时迁移并保存，保留其他偏好', () => {
-  const old = { key: 'test-key', model: 'custom-model', pool: legacyDefaultPool };
-  stored.set('squad-settings', JSON.stringify(old));
-  expect(loadSettings()).toEqual({ ...old, pool: defaults });
-  expect(JSON.parse(stored.get('squad-settings')!).pool).toBe(defaults);
-});
-it.each(['601318 中国平安 持仓\n00883 中海油 观察池', legacyDefaultPool + '\n'])(
-  '自定义池不被默认迁移覆盖',
+it.each([legacyDefaultPool, previousDefaultPool])(
+  '仅精确匹配历史默认池时迁移并保存，保留其他偏好',
   (pool) => {
-    saveSettings({ ...defaultSettings, pool });
-    expect(loadSettings().pool).toBe(pool);
+    const old = { key: 'test-key', model: 'custom-model', pool };
+    stored.set('squad-settings', JSON.stringify(old));
+    expect(loadSettings()).toEqual({ ...old, pool: defaults });
+    expect(JSON.parse(stored.get('squad-settings')!).pool).toBe(defaults);
+    expect(
+      poolEntries(loadSettings().pool).find((entry) => entry.code === '00883')?.manualDividend,
+    ).toBe(1.49);
   },
 );
+it.each([
+  '601318 中国平安 持仓\n00883 中海油 观察池',
+  legacyDefaultPool + '\n',
+  previousDefaultPool + '\n',
+  '00883 中海油 观察池 分红TTM=2港元',
+])('自定义池不被默认迁移覆盖', (pool) => {
+  saveSettings({ ...defaultSettings, pool });
+  expect(loadSettings().pool).toBe(pool);
+});
 it('无效保存不覆盖之前已保存的池，未保存的修改不影响读取', () => {
   const saved = { ...defaultSettings, pool: '601318 中国平安 持仓' };
   saveSettings(saved);

@@ -9,7 +9,7 @@ export type PoolCategory = '持仓' | '观察池';
 export type Snapshot = { code: string; name: string; category?: PoolCategory; fields: Field[] }[];
 export const legacyDefaultPool =
   '601088 中国神华\n600900 长江电力\n600036 招商银行\n601398 工商银行\n601939 建设银行\n601288 农业银行\n601988 中国银行\n601857 中国石油\n600941 中国移动\n601006 大秦铁路\n000895 双汇发展\n000651 格力电器\n000333 美的集团\n600028 中国石化';
-export const defaults = [
+export const previousDefaultPool = [
   '601318 中国平安 持仓',
   '601166 兴业银行 持仓',
   '600690 海尔智家 持仓',
@@ -25,6 +25,10 @@ export const defaults = [
   '600050 中国联通 观察池',
   '00883 中海油 观察池',
 ].join('\n');
+export const defaults = previousDefaultPool.replace(
+  '00883 中海油 观察池',
+  '00883 中海油 观察池 分红TTM=1.49港元',
+);
 export function poolEntries(pool: string) {
   const entries = pool
     .trim()
@@ -34,7 +38,18 @@ export function poolEntries(pool: string) {
     .map((line) => {
       const [code, ...rest] = line.split(/\s+/);
       const category: PoolCategory = rest.includes('持仓') ? '持仓' : '观察池';
-      return { code, category };
+      const overrides = rest.filter((token) => /^分红TTM/i.test(token));
+      if (!overrides.length) return { code, category };
+      const match = overrides[0].match(/^分红TTM=(\d+(?:\.\d+)?)(港元|元)$/i);
+      const manualDividend = Number(match?.[1]);
+      if (
+        overrides.length !== 1 ||
+        !match ||
+        !Number.isFinite(manualDividend) ||
+        match[2] !== (code.length === 5 ? '港元' : '元')
+      )
+        throw new Error('手动分红请填写分红TTM=非负金额及行情币种，如分红TTM=1.49港元。');
+      return { code, category, manualDividend };
     });
   if (!entries.length || entries.some(({ code }) => !/^(?:[06]\d{5}|\d{5})$/.test(code)))
     throw new Error('股票池请每行填写六位 A 股或五位港股代码及名称。');
@@ -90,7 +105,12 @@ export async function getJson(url: string) {
   if (!r.ok) throw new Error(`数据请求失败（${r.status}），请稍后重试。`);
   return r.json();
 }
-export async function fetchSnapshot(codes: string[]): Promise<Snapshot> {
+export async function fetchSnapshot(
+  codes: string[],
+  manualDividends: Record<string, number> = {},
+): Promise<Snapshot> {
+  if (Object.values(manualDividends).some((value) => !Number.isFinite(value) || value < 0))
+    throw new Error('手动分红必须为非负有限数值。');
   const quoteUrl = `https://qt.gtimg.cn/q=${codes.map((c) => `${c.length === 5 ? 'hk' : c.startsWith('6') ? 'sh' : 'sz'}${c}`).join(',')}`;
   const res = await fetch(quoteUrl);
   if (!res.ok) throw new Error('腾讯行情请求失败。');
@@ -107,6 +127,8 @@ export async function fetchSnapshot(codes: string[]): Promise<Snapshot> {
       const f = byCode.get(code)!;
       const hk = code.length === 5;
       const currency = hk ? '港元' : '元';
+      const manualDividend = manualDividends[code];
+      const manual = manualDividend !== undefined;
       const financialUrl = eastUrl(
         hk ? 'RPT_HKF10_FN_MAININDICATOR' : 'RPT_F10_FINANCE_MAINFINADATA',
         f[2],
@@ -119,10 +141,15 @@ export async function fetchSnapshot(codes: string[]): Promise<Snapshot> {
       const financial = getJson(financialUrl).then(parseFinancial);
       const [finance, bonusJson] = await Promise.all([
         hk ? financial.catch(() => ({}) as Record<string, string | number>) : financial,
-        hk ? Promise.resolve(null) : getJson(bonusUrl),
+        hk || manual ? Promise.resolve(null) : getJson(bonusUrl),
       ]);
       const now = new Date();
-      const dividend = hk ? null : dividendYield(bonusJson, Number(f[3]), now);
+      const dividend = manual
+        ? { cash: manualDividend, yield: (manualDividend / Number(f[3])) * 100 }
+        : hk
+          ? null
+          : dividendYield(bonusJson, Number(f[3]), now);
+      const dividendSource = manual ? '主人手动提供' : hk ? financialUrl : bonusUrl;
       const fields: Field[] = [];
       const add = (label: string, value: string | number, unit: string, source: string) =>
         fields.push({ label, value, unit, source, fetchedAt: now.toISOString() });
@@ -142,16 +169,16 @@ export async function fetchSnapshot(codes: string[]): Promise<Snapshot> {
         );
       add('行情时间', f[30], '', quoteUrl);
       add(
-        '近十二月每股现金分红（税前）',
+        manual ? '近十二月每股现金分红（主人手动提供）' : '近十二月每股现金分红（税前）',
         dividend?.cash ?? '缺失（港股分红口径未核实）',
         currency,
-        hk ? financialUrl : bonusUrl,
+        dividendSource,
       );
       add(
         '股息率（近十二月已实施分红÷现价）',
         dividend?.yield ?? '缺失（港股分红口径未核实）',
         '%',
-        (hk ? financialUrl : bonusUrl) + '；价格来源：' + quoteUrl,
+        dividendSource + '；价格来源：' + quoteUrl,
       );
       const financialCurrency = hk
         ? finance.CURRENCY === 'HKD'
