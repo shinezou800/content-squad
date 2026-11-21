@@ -1,5 +1,7 @@
 import type { Snapshot } from '../data/market';
 export type Flag = { 原文: string; 问题: string; 数据源值: string };
+const numberPattern =
+  /(?<!\d)((?:(?<![\d元%％亿万千百倍股年月日])[+-])?\d[\d,]*(?:\.\d+)?)(万亿|亿|万)?/g;
 function unitScale(unit = ''): number {
   return unit.startsWith('万亿')
     ? 1e12
@@ -28,11 +30,11 @@ export function checkDraft(draft: string, snapshot: Snapshot): Flag[] {
     for (const field of stock.fields) {
       if (typeof field.value === 'number') values.push(field.value * unitScale(field.unit));
       else
-        for (const m of field.value.matchAll(/(?<!\d)([+-]?\d[\d,]*(?:\.\d+)?)(万亿|亿|万)?/g))
+        for (const m of field.value.matchAll(numberPattern))
           values.push(Number(m[1].replaceAll(',', '')) * unitScale(m[2] || field.unit));
     }
   }
-  for (const m of draft.matchAll(/(?<!\d)([+-]?\d[\d,]*(?:\.\d+)?)(万亿|亿|万)?/g)) {
+  for (const m of draft.matchAll(numberPattern)) {
     const raw = Number(m[1].replaceAll(',', ''));
     const scale = unitScale(m[2]);
     const n = raw * scale;
