@@ -1,1 +1,27 @@
-{"name":"content-squad","private":true,"version":"0.1.0","type":"module","scripts":{"dev":"vite --host 0.0.0.0","build":"tsc -b && vite build","test":"vitest run","smoke":"node --experimental-strip-types scripts/smoke.ts"},"dependencies":{"react":"^19.2.0","react-dom":"^19.2.0"},"devDependencies":{"@types/node":"^24.0.0","@types/react":"^19.2.0","@types/react-dom":"^19.2.0","@vitejs/plugin-react":"^5.1.0","typescript":"^5.9.3","vite":"^7.2.2","vitest":"^4.0.9"}}
+{
+  "name": "content-squad",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc -b && vite build",
+    "test": "vitest run",
+    "smoke": "node --experimental-strip-types scripts/smoke.ts",
+    "format": "prettier --write src scripts"
+  },
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.1.0",
+    "prettier": "^3.10.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.2",
+    "vitest": "^4.0.9"
+  }
+}
