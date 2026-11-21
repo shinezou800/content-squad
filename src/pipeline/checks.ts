@@ -28,11 +28,11 @@ export function checkDraft(draft: string, snapshot: Snapshot): Flag[] {
     for (const field of stock.fields) {
       if (typeof field.value === 'number') values.push(field.value * unitScale(field.unit));
       else
-        for (const m of field.value.matchAll(/(\d[\d,]*(?:\.\d+)?)(万亿|亿|万)?/g))
+        for (const m of field.value.matchAll(/(?<!\d)([+-]?\d[\d,]*(?:\.\d+)?)(万亿|亿|万)?/g))
           values.push(Number(m[1].replaceAll(',', '')) * unitScale(m[2] || field.unit));
     }
   }
-  for (const m of draft.matchAll(/(?<!\d)(\d[\d,]*(?:\.\d+)?)(万亿|亿|万)?/g)) {
+  for (const m of draft.matchAll(/(?<!\d)([+-]?\d[\d,]*(?:\.\d+)?)(万亿|亿|万)?/g)) {
     const raw = Number(m[1].replaceAll(',', ''));
     const scale = unitScale(m[2]);
     const n = raw * scale;

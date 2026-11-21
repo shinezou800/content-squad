@@ -15,6 +15,27 @@ const snapshot: Snapshot = [
 const wrap = (text: string) =>
   `⚠️ 模拟盘记录。${text}\n持仓披露：未提供。\n非投资建议。数据来源：腾讯行情、东方财富。`;
 describe('确定性核对', () => {
+  it.each([-1.23, '-1.23%'])('保留快照和正文的负号：%s', (value) => {
+    const data: Snapshot = [
+      {
+        code: '601088',
+        name: '中国神华',
+        fields: [{ label: '涨跌幅', value, unit: '%', source: '腾讯', fetchedAt: '今天' }],
+      },
+    ];
+    expect(checkDraft(wrap('-1.23%'), data)).toEqual([]);
+    expect(checkDraft(wrap('1.23%'), data).some((f) => f.原文 === '1.23')).toBe(true);
+  });
+  it('负数不能匹配快照中的正数', () => {
+    const data: Snapshot = [
+      {
+        code: '601088',
+        name: '中国神华',
+        fields: [{ label: '涨跌幅', value: 1.23, unit: '%', source: '腾讯', fetchedAt: '今天' }],
+      },
+    ];
+    expect(checkDraft(wrap('-1.23%'), data).some((f) => f.原文 === '-1.23')).toBe(true);
+  });
   it.each([
     [2000, '亿元', '2000亿', '2000元'],
     ['2000', '亿元', '2000亿', '2000元'],
