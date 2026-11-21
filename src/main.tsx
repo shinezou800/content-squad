@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { loadSettings, saveSettings, type Settings } from './settings';
 import { registry } from './squads/registry';
 import { LocalStorageRuns, type Run } from './storage';
-import { runPipeline } from './pipeline/runner';
+import { hasReachedFinalStep, runPipeline } from './pipeline/runner';
 import { poolCodes } from './data/market';
 import './style.css';
 const storage = new LocalStorageRuns();
@@ -182,7 +182,7 @@ function App() {
                 ].map((role, i) => {
                   const step = run?.steps.find((s) => s.roleId === role.id);
                   const final = role.id === 'final';
-                  const ready = !!run?.finalText;
+                  const ready = hasReachedFinalStep(run);
                   return (
                     <div
                       key={role.id}
@@ -285,7 +285,7 @@ function App() {
                       <pre className={step.roleId === 'check' ? 'review' : ''}>{step.output}</pre>
                     </details>
                   ))}
-                {run.finalText && (
+                {hasReachedFinalStep(run) && (
                   <section className="panel">
                     <div className="section-heading">
                       <h2>

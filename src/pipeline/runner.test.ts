@@ -1,8 +1,34 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { runPipeline } from './runner';
+import { hasReachedFinalStep, runPipeline } from './runner';
 import type { Squad } from '../squads/types';
+import type { Run } from '../storage';
 const settings = { key: 'private-key', model: 'test', pool: '' };
 afterEach(() => vi.unstubAllGlobals());
+
+it('到达成稿后清空正文仍可审稿，未完成或失败的运行不可审稿', () => {
+  const run: Run = {
+    id: 'test',
+    squadId: 'test',
+    topic: '',
+    createdAt: '',
+    snapshot: [],
+    status: 'draft',
+    steps: ['data', 'draft', 'check'].map((roleId) => ({ roleId, status: 'done' })),
+    finalText: '正文',
+  };
+  expect(hasReachedFinalStep(run)).toBe(true);
+  expect(hasReachedFinalStep({ ...run, finalText: '' })).toBe(true);
+  expect(hasReachedFinalStep(undefined)).toBe(false);
+  expect(hasReachedFinalStep({ ...run, steps: [] })).toBe(false);
+  for (const status of ['pending', 'running', 'failed'] as const) {
+    expect(
+      hasReachedFinalStep({
+        ...run,
+        steps: [...run.steps.slice(0, -1), { roleId: 'check', status }],
+      }),
+    ).toBe(false);
+  }
+});
 
 it.each([undefined, {}])('缺少 randomUUID 时仍能生成不同的运行标识：%s', async (crypto) => {
   vi.stubGlobal('crypto', crypto);

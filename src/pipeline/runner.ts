@@ -8,6 +8,10 @@ function createRunId(): string {
   return `${Date.now().toString(36)}-${(++fallbackSequence).toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
+export function hasReachedFinalStep(run: Run | undefined): boolean {
+  return !!run && run.steps.length > 0 && run.steps.every((step) => step.status === 'done');
+}
+
 export async function runPipeline(
   squad: Squad,
   topic: string,
