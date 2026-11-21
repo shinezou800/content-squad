@@ -1,0 +1,62 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import { loadSettings, saveSettings, type Settings } from './settings';
+import { registry } from './squads/registry';
+import { LocalStorageRuns, type Run } from './storage';
+import { runPipeline } from './pipeline/runner';
+import { poolCodes } from './data/market';
+import './style.css';
+const storage = new LocalStorageRuns();
+const squad = registry['zangu-shouxi'];
+function App() {
+  const [page, setPage] = useState<'work'|'settings'|'history'>('work');
+  const [settings, setSettings] = useState(loadSettings);
+  const [topic, setTopic] = useState(''); const [run, setRun] = useState<Run>();
+  const [history, setHistory] = useState<Run[]>([]); const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState(''); const [models, setModels] = useState<string[]>([]); const [loadingModels, setLoadingModels] = useState(false);
+  const lock = useRef(false);
+  useEffect(() => { storage.list().then(setHistory).catch(() => setMessage('本地历史读取失败，请检查浏览器存储。')); }, []);
+  async function persist(value: Run) { await storage.save(value); setHistory(await storage.list()); }
+  async function start() {
+    if (lock.current) return;
+    try { if (!topic.trim()) throw new Error('先写下这次想聊的选题。'); if (!settings.key.trim()) throw new Error('请先在设置中填写 OpenRouter API 密钥。'); poolCodes(settings.pool); }
+    catch (e) { setMessage((e as Error).message); return; }
+    lock.current = true; setBusy(true); setMessage('');
+    try { const next = await runPipeline(squad, topic.trim(), settings, setRun); await persist(next); }
+    catch { setMessage('运行或保存失败，请检查网络与浏览器存储空间。'); }
+    finally { lock.current = false; setBusy(false); }
+  }
+  async function updateRun(next: Run) { setRun(next); try { await persist(next); } catch { setMessage('保存失败，请检查本地存储空间，并及时复制正文。'); } }
+  async function loadModels() {
+    setLoadingModels(true); setMessage('');
+    try { const response = await fetch('https://openrouter.ai/api/v1/models'); if (!response.ok) throw new Error(); const json = await response.json(); const list = json.data.map((m: {id: string}) => m.id).filter((id: string) => id.endsWith(':free')).sort(); if (!list.length) throw new Error(); setModels(list); setMessage(`已载入 ${list.length} 个免费模型。`); }
+    catch { setMessage('免费模型列表加载失败，可直接填写模型名称。'); } finally { setLoadingModels(false); }
+  }
+  const labels = { pending: '等候中', running: '进行中', done: '已完成', failed: '未完成' };
+  return <div className="shell">
+    <header><a className="brand" href="#" onClick={e => { e.preventDefault(); setPage('work'); }}><span className="brand-icon">攒</span><span>内容小团<small>攒股收息 · 创作工作室</small></span></a><span className="local-badge">● 本地工作空间</span></header>
+    <nav aria-label="主导航">{([['work','创作工作台'],['history','作品档案'],['settings','偏好设置']] as const).map(([id,label]) => <button key={id} className={page === id ? 'active' : ''} onClick={() => { setPage(id); setMessage(''); }}>{label}{id === 'history' && <span className="count">{history.length}</span>}</button>)}</nav>
+    <main>
+      {message && <div className="notice" role="status">{message}</div>}
+      {page === 'work' && <>
+        <section className="intro"><div className="eyebrow">一人主理，三位小伙伴</div><h1>好内容，从一份<br className="mobile-break"/>扎实的记录开始。</h1><p>{squad.description}</p><span className="tag">攒股收息内容线</span><span className="tag muted">固定顺序 · 单次协作</span></section>
+        <section className="panel topic-panel"><div className="section-heading"><h2><span className="section-number">01</span> 交给小团一个选题</h2><span className="subtle">你来定方向</span></div><label htmlFor="topic" className="sr-only">本次选题</label><textarea id="topic" value={topic} disabled={busy} onChange={e => setTopic(e.target.value)} placeholder="例如：记录一下观察池里高股息公司的现金流与分红情况……" rows={3}/><div className="topic-bottom"><span className="subtle">只记录，不荐股。每个数字都要有出处。</span><button className="primary" disabled={busy} onClick={start}>{busy ? '小团正在协作…' : run?.steps.some(s => s.status === 'failed') ? '重新运行整条内容线 ↗' : '开始本次创作 ↗'}</button></div></section>
+        <section className="pipeline-section"><div className="section-heading"><h2><span className="section-number">02</span> 小团协作线</h2><span className="subtle">依次推进，不跳步</span></div><div className="pipeline">{[...squad.roles.map(r => ({...r, title:r.title})), {id:'final',name:'成稿',title:'由你拍板'}].map((role,i) => { const step = run?.steps.find(s => s.roleId === role.id); const final = role.id === 'final'; const ready = !!run?.finalText; return <div key={role.id} className={`role-card ${step?.status === 'running' ? 'running' : ''}`}><div className={'avatar avatar-'+i}>{['数','稿','核','定'][i]}</div><div className="role-body"><h3>{role.name}<span>{role.title}</span></h3><p>{['行情与财报 · 提炼事实','遵循规则 · 写下记录','数字核验 · 标出疑点','固定模板 · 人工定稿'][i]}</p><span className={`status ${step?.status || ''}`}>{final ? ready ? '等待拍板' : '等候中' : step ? labels[step.status] : '等候中'}</span></div>{step?.error && <p className="error">{step.error}</p>}</div>; })}</div></section>
+        {run && <>
+          {run.snapshot.length > 0 && <section className="panel"><h2>数据快照 <span className="subtle">所有数字的共同底稿</span></h2><p className="subtle">股息率采用近十二月已实施税前现金分红 ÷ 腾讯现价；行情时间与抓取时间可能不同。</p>{run.snapshot.map(stock => <details key={stock.code}><summary>{stock.name} <span className="subtle">{stock.code} · 展开来源明细</span></summary><div className="table-scroll"><table><thead><tr><th>字段</th><th>数值</th><th>来源 / 抓取时间</th></tr></thead><tbody>{stock.fields.map(f => <tr key={f.label}><td>{f.label}</td><td>{typeof f.value === 'number' ? Number(f.value.toFixed(4)).toLocaleString('zh-CN') : f.value}{f.unit}</td><td><a href={f.source.split('；')[0]} target="_blank" rel="noreferrer">{f.source.includes('gtimg') && !f.source.includes('eastmoney') ? '腾讯行情' : '东方财富'}</a><small>{new Date(f.fetchedAt).toLocaleString('zh-CN')}</small></td></tr>)}</tbody></table></div></details>)}</section>}
+          {run.steps.filter(s => s.output).map(step => <details className="panel" key={step.roleId} open={step.roleId === 'check'}><summary>{squad.roles.find(r => r.id === step.roleId)?.name} · 工作记录</summary><pre className={step.roleId === 'check' ? 'review' : ''}>{step.output}</pre></details>)}
+          {run.finalText && <section className="panel"><div className="section-heading"><h2><span className="section-number">03</span> 主理人审稿</h2><span className="tag">{run.status === 'approved' ? '已拍板 · 已定稿' : '待审稿'}</span></div><p className="subtle">核对记录已附在文末。请逐项复核、编辑并移除不用于发布的内容；编辑后需要重新拍板。</p><label htmlFor="final" className="sr-only">可编辑的最终正文</label><textarea id="final" className="final-text" value={run.finalText} onChange={e => { setRun({...run,finalText:e.target.value,status:'draft'}); }} onBlur={() => { void updateRun(run); }}/><div className="actions"><button className="secondary" onClick={async () => { try { await navigator.clipboard.writeText(run.finalText); setMessage('正文已复制。'); } catch { setMessage('复制失败，请长按正文手动复制。'); } }}>复制正文</button><button className="primary" disabled={run.status === 'approved'} onClick={() => updateRun({...run,status:'approved'})}>拍板 / 定稿 ✓</button></div></section>}
+        </>}
+        {!run && <div className="empty-note"><span>✧</span><h3>把想法交给小团，把判断留给自己。</h3><p>完成设置后开始第一篇记录，成稿将出现在这里。</p><button className="text-button" onClick={() => setPage('settings')}>先去配置密钥与观察池 →</button></div>}
+      </>}
+      {page === 'settings' && <><section className="intro"><div className="eyebrow">只属于这个浏览器</div><h1>把工作台调成你的习惯。</h1><p>密钥与偏好仅保存在本机，不进入作品档案或云端存储。</p></section><form className="panel settings" onSubmit={e => { e.preventDefault(); try { poolCodes(settings.pool); if (!settings.model.trim()) throw new Error('请填写模型名称。'); saveSettings(settings); setMessage('设置已保存在此浏览器。'); } catch(e) { setMessage((e as Error).message); } }}>
+        <h2>模型连接</h2><label htmlFor="key">OpenRouter API 密钥</label><input id="key" type="password" autoComplete="off" value={settings.key} onChange={e => setSettings({...settings,key:e.target.value})} placeholder="在此输入密钥"/><p className="subtle">仅向 OpenRouter 发送鉴权请求，请勿在共享设备保存。快照与选题会发送给所选模型。</p>
+        <label htmlFor="model-list">免费模型</label><div className="model-row"><select id="model-list" value={settings.model} onChange={e => setSettings({...settings,model:e.target.value})}>{[...new Set([settings.model,...models])].map(m => <option key={m}>{m}</option>)}</select><button type="button" className="secondary" disabled={loadingModels} onClick={loadModels}>{loadingModels ? '加载中…' : '载入免费列表'}</button></div>
+        <label htmlFor="model">模型名称（可手动覆盖）</label><input id="model" value={settings.model} onChange={e => setSettings({...settings,model:e.target.value})}/><p className="subtle">免费模型的可用性由服务方决定，可在此填写其他模型标识。</p>
+        <hr/><h2>观察池记录</h2><label htmlFor="pool">股票池 · 每行一个代码与名称</label><textarea id="pool" rows={14} value={settings.pool} onChange={e => setSettings({...settings,pool:e.target.value})}/><p className="subtle">默认十四只 A 股。每次运行获取整个股票池的数据，不代表持仓或推荐。</p><button className="primary" type="submit">保存本地设置</button>
+      </form></>}
+      {page === 'history' && <><section className="intro"><div className="eyebrow">每一次认真记录，都值得留存</div><h1>作品档案</h1><p>仅保存在当前浏览器。清除网站数据会同时删除记录。</p></section>{!history.length ? <div className="empty-note">还没有作品，去工作台写下第一个选题吧。</div> : history.map(item => <button className="history-card panel" disabled={busy} key={item.id} onClick={() => { setRun(item); setTopic(item.topic); setPage('work'); }}><span className="tag">{item.status === 'approved' ? '已定稿' : item.steps.some(s => s.status === 'failed') ? '运行中断' : '草稿'}</span><h2>{item.topic}</h2><p className="subtle">{new Date(item.createdAt).toLocaleString('zh-CN')} · 攒股收息内容线 →</p></button>)}</>}
+    </main><footer>记录有依据，决策有边界。<span>模拟盘记录 · 非投资建议</span></footer>
+  </div>;
+}
+createRoot(document.getElementById('root')!).render(<React.StrictMode><App/></React.StrictMode>);
