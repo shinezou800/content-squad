@@ -1,5 +1,15 @@
 import type { Snapshot } from '../data/market';
 export type Flag = { 原文: string; 问题: string; 数据源值: string };
+function unitScale(unit = ''): number {
+  return unit.startsWith('万亿')
+    ? 1e12
+    : unit.startsWith('亿')
+      ? 1e8
+      : unit.startsWith('万')
+        ? 1e4
+        : 1;
+}
+
 export function checkDraft(draft: string, snapshot: Snapshot): Flag[] {
   const flags: Flag[] = [];
   const add = (原文: string, 问题: string, 数据源值 = '无') => flags.push({ 原文, 问题, 数据源值 });
@@ -16,13 +26,15 @@ export function checkDraft(draft: string, snapshot: Snapshot): Flag[] {
   for (const stock of snapshot) {
     values.push(Number(stock.code));
     for (const field of stock.fields) {
-      if (typeof field.value === 'number') values.push(field.value);
-      else for (const m of field.value.matchAll(/\d+(?:\.\d+)?/g)) values.push(Number(m[0]));
+      if (typeof field.value === 'number') values.push(field.value * unitScale(field.unit));
+      else
+        for (const m of field.value.matchAll(/(\d[\d,]*(?:\.\d+)?)(万亿|亿|万)?/g))
+          values.push(Number(m[1].replaceAll(',', '')) * unitScale(m[2] || field.unit));
     }
   }
   for (const m of draft.matchAll(/(?<!\d)(\d[\d,]*(?:\.\d+)?)(万亿|亿|万)?/g)) {
     const raw = Number(m[1].replaceAll(',', ''));
-    const scale = m[2] === '万亿' ? 1e12 : m[2] === '亿' ? 1e8 : m[2] === '万' ? 1e4 : 1;
+    const scale = unitScale(m[2]);
     const n = raw * scale;
     const digits = m[1].split('.')[1]?.length || 0;
     const tolerance = 0.5 * 10 ** -digits * scale + 1e-8;

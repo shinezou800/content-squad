@@ -15,6 +15,23 @@ const snapshot: Snapshot = [
 const wrap = (text: string) =>
   `⚠️ 模拟盘记录。${text}\n持仓披露：未提供。\n非投资建议。数据来源：腾讯行情、东方财富。`;
 describe('确定性核对', () => {
+  it.each([
+    [2000, '亿元', '2000亿', '2000元'],
+    ['2000', '亿元', '2000亿', '2000元'],
+    [2000, '万元', '2000万', '2000元'],
+    [2, '万亿元', '20000亿', '2元'],
+    ['2000亿元', undefined, '2000亿', '2000元'],
+  ])('按快照单位统一基数：%s %s', (value, unit, matching, wrong) => {
+    const data: Snapshot = [
+      {
+        code: '601088',
+        name: '中国神华',
+        fields: [{ label: '市值', value, unit, source: '腾讯', fetchedAt: '今天' }],
+      },
+    ];
+    expect(checkDraft(wrap(matching), data)).toEqual([]);
+    expect(checkDraft(wrap(wrong), data).some((f) => f.问题.startsWith('数字未在快照'))).toBe(true);
+  });
   it('允许必需短语、四舍五入与单位换算', () =>
     expect(
       checkDraft(
