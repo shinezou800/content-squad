@@ -1,7 +1,27 @@
 import type { Snapshot } from '../data/market';
 export type Flag = { 原文: string; 问题: string; 数据源值: string };
 const numberPattern =
-  /(?<!\d)((?:(?<![\d元%％亿万千百倍股]\s*)[+-])?\d[\d,]*(?:\.\d+)?)(?:\s*(万亿|亿|万)(?=元|股|港元|港币|人民币|[^\u3400-\u9fff]|$))?(?:\s*(人民币元|人民币|RMB|港元|港币|HKD|元))?/gi;
+  /(?<!\d)((?:(?<![\d元%％亿万千百倍股]\s*)[+-])?\d[\d,]*(?:\.\d+)?)(?:\s*(万亿|亿|万))?(?:\s*(人民币元|人民币|RMB|港元|港币|HKD|元))?/gi;
+function* numberMatches(text: string, snapshot: Snapshot) {
+  for (const match of text.matchAll(numberPattern)) {
+    if (
+      /^\d{5,6}$/.test(match[1]) &&
+      snapshot.some(
+        (stock) =>
+          stock.code === match[1] &&
+          stock.name &&
+          text
+            .slice(match.index + match[1].length)
+            .trimStart()
+            .startsWith(stock.name),
+      )
+    ) {
+      match[2] = '';
+      match[3] = '';
+    }
+    yield match;
+  }
+}
 function currencyOf(unit = '') {
   return /港元|港币|HKD/i.test(unit)
     ? 'HKD'
@@ -43,14 +63,14 @@ export function checkDraft(draft: string, snapshot: Snapshot): Flag[] {
           currency: currencyOf(field.unit),
         });
       else
-        for (const m of field.value.matchAll(numberPattern))
+        for (const m of numberMatches(field.value, snapshot))
           values.push({
             value: Number(m[1].replaceAll(',', '')) * unitScale(m[2] || field.unit),
             currency: currencyOf(m[3] || field.unit),
           });
     }
   }
-  for (const m of draft.matchAll(numberPattern)) {
+  for (const m of numberMatches(draft, snapshot)) {
     const raw = Number(m[1].replaceAll(',', ''));
     const scale = unitScale(m[2]);
     const n = raw * scale;

@@ -19,6 +19,7 @@ describe('确定性核对', () => {
     ['600309', '万华化学'],
     ['000002', '万科'],
     ['300014', '亿纬锂能'],
+    ['00883', '中海油'],
   ])('股票名开头的万/亿不作为代码的单位：%s %s', (code, name) => {
     const data: Snapshot = [{ code, name, fields: [] }];
     expect(checkDraft(wrap(`${code} ${name}`), data)).toEqual([]);
@@ -26,8 +27,11 @@ describe('确定性核对', () => {
   });
   it.each([
     ['2000亿', 2000e8],
+    ['收入2000亿的公司', 2000e8],
+    ['收入2000亿左右', 2000e8],
     ['3.5万亿元', 3.5e12],
     ['12万股', 12e4],
+    ['600309亿元', 600309e8],
   ])('正常数量单位仍换算：%s', (text, value) => {
     const data: Snapshot = [
       {
@@ -45,10 +49,14 @@ describe('确定性核对', () => {
       },
     ];
     expect(checkDraft(wrap(text), data)).toEqual([]);
-    const wrong: Snapshot = [
-      { ...data[0], fields: [{ ...data[0].fields[0], value: value / 10000 }] },
-    ];
-    expect(checkDraft(wrap(text), wrong).some((f) => f.问题.startsWith('数字未在快照'))).toBe(true);
+    for (const wrongValue of [value / 10000, Number(text.match(/\d+(?:\.\d+)?/)![0])]) {
+      const wrong: Snapshot = [
+        { ...data[0], fields: [{ ...data[0].fields[0], value: wrongValue }] },
+      ];
+      expect(checkDraft(wrap(text), wrong).some((f) => f.问题.startsWith('数字未在快照'))).toBe(
+        true,
+      );
+    }
   });
   it.each(['元', ' 元', '人民币元', ' 人民币', ' RMB', ' rmb'])(
     '港元快照拒绝人民币变体：%s',
