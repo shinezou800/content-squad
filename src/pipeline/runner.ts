@@ -1,6 +1,13 @@
 import type { Squad, Context } from '../squads/types';
 import type { Settings } from '../settings';
 import type { Run } from '../storage';
+let fallbackSequence = 0;
+
+function createRunId(): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID();
+  return `${Date.now().toString(36)}-${(++fallbackSequence).toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
 export async function runPipeline(
   squad: Squad,
   topic: string,
@@ -13,7 +20,7 @@ export async function runPipeline(
   )
     throw new Error('小团流水线配置无效。');
   const run: Run = {
-    id: crypto.randomUUID(),
+    id: createRunId(),
     squadId: squad.id,
     topic,
     createdAt: new Date().toISOString(),

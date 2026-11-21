@@ -1,7 +1,39 @@
-import { expect, it, vi } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { runPipeline } from './runner';
 import type { Squad } from '../squads/types';
 const settings = { key: 'private-key', model: 'test', pool: '' };
+afterEach(() => vi.unstubAllGlobals());
+
+it.each([undefined, {}])('缺少 randomUUID 时仍能生成不同的运行标识：%s', async (crypto) => {
+  vi.stubGlobal('crypto', crypto);
+  const squad: Squad = {
+    id: 'test',
+    name: '',
+    description: '',
+    roles: [],
+    pipeline: [],
+    template: () => '',
+  };
+  const first = await runPipeline(squad, '', settings, () => {});
+  const second = await runPipeline(squad, '', settings, () => {});
+  expect(first.id).not.toBe('');
+  expect(second.id).not.toBe(first.id);
+});
+
+it('可用时使用原生 randomUUID', async () => {
+  const randomUUID = vi.fn(() => 'native-id');
+  vi.stubGlobal('crypto', { randomUUID });
+  const squad: Squad = {
+    id: 'test',
+    name: '',
+    description: '',
+    roles: [],
+    pipeline: [],
+    template: () => '',
+  };
+  expect((await runPipeline(squad, '', settings, () => {})).id).toBe('native-id');
+  expect(randomUUID).toHaveBeenCalledOnce();
+});
 it('按顺序仅执行一次，保存输入输出时间并发出进度，不保存密钥', async () => {
   const called: string[] = [];
   const progress: string[] = [];
