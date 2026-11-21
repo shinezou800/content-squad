@@ -15,6 +15,55 @@ const snapshot: Snapshot = [
 const wrap = (text: string) =>
   `⚠️ 模拟盘记录。${text}\n持仓披露：未提供。\n非投资建议。数据来源：腾讯行情、东方财富。`;
 describe('确定性核对', () => {
+  it.each(['元', ' 元', '人民币元', ' 人民币', ' RMB', ' rmb'])(
+    '港元快照拒绝人民币变体：%s',
+    (suffix) => {
+      const data: Snapshot = [
+        {
+          code: '00883',
+          name: '中海油',
+          fields: [{ label: '现价', value: 21.7, unit: '港元', source: '腾讯', fetchedAt: '今天' }],
+        },
+      ];
+      expect(
+        checkDraft(wrap(`21.7${suffix}`), data).some((f) => f.问题.startsWith('数字未在快照')),
+      ).toBe(true);
+    },
+  );
+  it.each(['港元', ' 港元', '港币', ' 港币', ' HKD', ' hkd'])(
+    '港元快照接受港元变体：%s',
+    (suffix) => {
+      const data: Snapshot = [
+        {
+          code: '00883',
+          name: '中海油',
+          fields: [{ label: '现价', value: 21.7, unit: '港元', source: '腾讯', fetchedAt: '今天' }],
+        },
+      ];
+      expect(checkDraft(wrap(`21.7${suffix}`), data)).toEqual([]);
+    },
+  );
+  it.each(['元', '人民币', '人民币元', 'RMB', '港元', '港币', 'HKD'])(
+    '快照单位及字符串也归一化：%s',
+    (unit) => {
+      const hk = ['港元', '港币', 'HKD'].includes(unit);
+      for (const field of [{ value: 21.7, unit }, { value: `21.7 ${unit}` }]) {
+        const data: Snapshot = [
+          {
+            code: '00883',
+            name: '股票',
+            fields: [{ label: '现价', ...field, source: '腾讯', fetchedAt: '今天' }],
+          },
+        ];
+        expect(checkDraft(wrap(`21.7 ${hk ? 'HKD' : 'RMB'}`), data)).toEqual([]);
+        expect(
+          checkDraft(wrap(`21.7 ${hk ? 'RMB' : 'HKD'}`), data).some((f) =>
+            f.问题.startsWith('数字未在快照'),
+          ),
+        ).toBe(true);
+      }
+    },
+  );
   it.each([
     [21.7, '港元', '21.7港元', '21.7元'],
     [21.7, '元', '21.7元', '21.7港元'],
