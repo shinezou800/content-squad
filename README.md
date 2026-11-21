@@ -22,7 +22,19 @@ npm run dev
 
 API 密钥只保存在当前浏览器的 localStorage，不硬编码、不记录到历史或日志、不进入云端同步。密钥会作为鉴权头发送给 OpenRouter；选题、快照与草稿会发送到所选模型。公共行情和财务查询只发送股票代码，不携带密钥。浏览器本地存储并非加密保险箱，请勿在共享设备保存密钥。Google 字体不可用时自动使用系统字体。
 
-设置及作品均仅在当前浏览器。清除网站数据会丢失内容，重要作品请另行复制备份。网络、跨域策略、免费模型额度和接口数据变化可能导致失败。拍板只是人工确认状态，不表示核对必然正确。规则核对是保守提醒（包括单字禁词与数字匹配），不能替代事实审查。
+设置始终仅在当前浏览器。未配置云端或未登录时，作品也仅在当前浏览器；登录后，新的作品保存与历史读取使用云端，不自动合并或上传本地记录。退出后恢复本地历史。清除网站数据会丢失本地内容，重要作品请另行复制备份。网络、跨域策略、免费模型额度和接口数据变化可能导致失败。拍板只是人工确认状态，不表示核对必然正确。规则核对是保守提醒（包括单字禁词与数字匹配），不能替代事实审查。
+
+## 可选云端存储
+
+构建时同时提供 `VITE_SUPABASE_URL` 和 `VITE_SUPABASE_PUBLISHABLE_KEY`。后者必须为 `sb_publishable_` 开头的公开发布密钥，可安全包含在静态构建中；不要提供任何管理权限密钥。缺少配置或仍为占位符时自动使用纯本地模式。
+
+1. 管理员检查后，在 Supabase SQL Editor 以 `postgres` 管理员身份执行 `supabase/migrations/0001_runs.sql`。本次开发没有执行迁移或任何线上写入。
+2. 由管理员建立邮箱密码账号，关闭不需要的公开注册。应用只有登录，没有注册入口。
+3. 管理员通过 SQL 向 `public.app_owner(user_id)` 写入允许访问的 Auth 用户 UUID。空名单时无人能读写作品。客户端对名单无表权限；名单启用并强制 RLS，无客户端策略。名单只能由管理员 SQL 管理。
+4. `private.is_app_owner()` 是固定空搜索路径、无参数的稳定安全定义者函数，由 `postgres` 所有，仅向已登录用户开放执行；`private` 不应加入 API 暴露 schema。作品表按当前用户及名单双重限制，更新同时检查旧行和新行。
+5. 在手机「偏好设置 → 云端同步」登录，显示当前邮箱；作品档案自动切换到云端。退出恢复本地档案，不删除任一端的数据。切换账号会清空当前编辑视图，避免误存到另一存储。
+
+密码只在登录请求中提交，应用不自行保存密码。Supabase 会在本浏览器保存会话令牌以维持登录；共享设备用完请退出。OpenRouter 密钥及股票池偏好不写入云端，云端 `data` 仅保存运行记录（快照、稿件与核对过程）。请不要主动在选题或正文里填写密钥。网络保存失败时请先复制稿件备份，没有自动离线回写。
 
 ## 数据口径
 
@@ -36,7 +48,8 @@ API 密钥只保存在当前浏览器的 localStorage，不硬编码、不记录
 - `src/squads/types.ts`：Role、Squad，保留双 squad 标识元组的 MidSquad 类型，未实现中团组合。
 - `src/squads/registry.ts`：注册 `zangu-shouxi`，新增小团可复用流水线。
 - `src/pipeline/runner.ts`：通用顺序运行器，单步状态/输入/输出/错误/时间与进度回调，输入不含密钥。
-- `src/storage/index.ts`：RunStorage 接口、LocalStorageRuns 实现和明确抛错的 SupabaseRuns 占位；未安装 Supabase 依赖。设置独立于作品存储，日后接云端也不应同步密钥。
+- `src/storage/index.ts`：RunStorage 接口、LocalStorageRuns 与 SupabaseRuns 实现。云端按用户过滤、创建时间倒序读取，以运行 id 执行 upsert。设置独立于作品存储，不同步模型密钥。
+- `src/storage/supabase.ts`：可选构建配置、客户端与中文错误；`src/CloudSettings.tsx`：邮箱密码登录与退出。
 
 ## 检查与部署
 
@@ -48,4 +61,4 @@ VITE_BASE_PATH=/content-squad/ npm run build
 
 烟测是 Node 直接请求三个真实股票接口，不使用密钥；单元测试不需要外网。Node 通过并不等于浏览器跨域永远可用。
 
-创建远端仓库后，将源码推到 `main`，在仓库 Settings → Pages 的 Source 选择 **GitHub Actions**。工作流先测试构建，再通过 `actions/deploy-pages` 发布，子路径默认 `/content-squad/`。自定义域名或仓库改名需调整工作流的 `VITE_BASE_PATH`。本项目当前不含远端，也未部署。
+仓库 Settings → Pages 的 Source 选择 **GitHub Actions**。工作流先测试构建，再通过 `actions/deploy-pages` 发布，子路径默认 `/content-squad/`。自定义域名或仓库改名需调整工作流的 `VITE_BASE_PATH`。部署工作流已填写项目 URL，公开发布密钥暂为 `__PUBLISHABLE_KEY__`，管理员需在发布前替换为该项目的公开发布密钥（环境中没有提供指定 token，因此未使用其他凭据）。本次仅本地提交，不推送或部署。云端适配器单测使用模拟客户端，不会写入真实 Supabase；迁移权限尚未在真实数据库执行验证。

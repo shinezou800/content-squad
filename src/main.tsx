@@ -1,14 +1,26 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { loadSettings, saveSettings, type Settings } from './settings';
 import { registry } from './squads/registry';
-import { LocalStorageRuns, type Run } from './storage';
+import { LocalStorageRuns, SupabaseRuns, type Run } from './storage';
+import { supabase } from './storage/supabase';
+import type { User } from '@supabase/supabase-js';
+import { CloudSettings } from './CloudSettings';
 import { hasReachedFinalStep, runPipeline } from './pipeline/runner';
 import { poolCodes } from './data/market';
 import './style.css';
-const storage = new LocalStorageRuns();
+const localRuns = new LocalStorageRuns();
 const squad = registry['zangu-shouxi'];
 function App() {
+  const [user, setUser] = useState<User | null>(null);
+  const [authReady, setAuthReady] = useState(!supabase);
+  const ownerId = user?.id;
+  const storage = useMemo(
+    () => (supabase && ownerId ? new SupabaseRuns(supabase, ownerId) : localRuns),
+    [ownerId],
+  );
+  const activeStorage = useRef(storage);
+  activeStorage.current = storage;
   const [page, setPage] = useState<'work' | 'settings' | 'history'>('work');
   const [settings, setSettings] = useState(loadSettings);
   const [topic, setTopic] = useState('');
@@ -21,17 +33,66 @@ function App() {
   const [loadingModels, setLoadingModels] = useState(false);
   const lock = useRef(false);
   useEffect(() => {
+    if (!supabase) return;
+    let active = true;
+    let changed = false;
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      changed = true;
+      if (active) {
+        setUser(session?.user ?? null);
+        setAuthReady(true);
+      }
+    });
+    supabase.auth
+      .getSession()
+      .then(({ data, error }) => {
+        if (!active || changed) return;
+        if (error) setMessage('云端登录状态读取失败，当前使用本地历史。');
+        setUser(data.session?.user ?? null);
+        setAuthReady(true);
+      })
+      .catch(() => {
+        if (active && !changed) {
+          setMessage('云端登录状态读取失败，当前使用本地历史。');
+          setAuthReady(true);
+        }
+      });
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+  useEffect(() => {
+    if (!authReady) return;
+    let active = true;
+    setRun(undefined);
+    setHistory([]);
     storage
       .list()
-      .then(setHistory)
-      .catch(() => setMessage('本地历史读取失败，请检查浏览器存储。'));
-  }, []);
+      .then((rows) => {
+        if (active) setHistory(rows);
+      })
+      .catch((error) => {
+        if (active)
+          setMessage(
+            storage === localRuns
+              ? '本地历史读取失败，请检查浏览器存储。'
+              : (error as Error).message,
+          );
+      });
+    return () => {
+      active = false;
+    };
+  }, [storage, authReady]);
   async function persist(value: Run) {
     await storage.save(value);
-    setHistory(await storage.list());
+    const rows = await storage.list();
+    if (activeStorage.current === storage) setHistory(rows);
   }
   async function start() {
-    if (lock.current) return;
+    if (lock.current || !authReady) return;
     try {
       if (!topic.trim()) throw new Error('先写下这次想聊的选题。');
       if (!settings.key.trim()) throw new Error('请先在设置中填写 OpenRouter API 密钥。');
@@ -44,10 +105,20 @@ function App() {
     setBusy(true);
     setMessage('');
     try {
-      const next = await runPipeline(squad, topic.trim(), settings, setRun);
+      const next = await runPipeline(squad, topic.trim(), settings, (progress) => {
+        if (activeStorage.current === storage) setRun(progress);
+      });
+      if (activeStorage.current !== storage) {
+        setMessage('账号状态已变化，本次运行未保存，请在当前账号重新运行。');
+        return;
+      }
       await persist(next);
-    } catch {
-      setMessage('运行或保存失败，请检查网络与浏览器存储空间。');
+    } catch (error) {
+      setMessage(
+        storage !== localRuns && error instanceof Error
+          ? error.message
+          : '运行或保存失败，请检查网络与浏览器存储空间。',
+      );
     } finally {
       lock.current = false;
       setBusy(false);
@@ -57,8 +128,12 @@ function App() {
     setRun(next);
     try {
       await persist(next);
-    } catch {
-      setMessage('保存失败，请检查本地存储空间，并及时复制正文。');
+    } catch (error) {
+      setMessage(
+        storage !== localRuns && error instanceof Error
+          ? error.message
+          : '保存失败，请检查本地存储空间，并及时复制正文。',
+      );
     }
   }
   async function loadModels() {
@@ -98,7 +173,7 @@ function App() {
             内容小团<small>攒股收息 · 创作工作室</small>
           </span>
         </a>
-        <span className="local-badge">● 本地工作空间</span>
+        <span className="local-badge">● {user ? '云端工作空间' : '本地工作空间'}</span>
       </header>
       <nav aria-label="主导航">
         {(
@@ -160,7 +235,7 @@ function App() {
               />
               <div className="topic-bottom">
                 <span className="subtle">只记录，不荐股。每个数字都要有出处。</span>
-                <button className="primary" disabled={busy} onClick={start}>
+                <button className="primary" disabled={busy || !authReady} onClick={start}>
                   {busy
                     ? '小团正在协作…'
                     : run?.steps.some((s) => s.status === 'failed')
@@ -439,6 +514,7 @@ function App() {
                 保存本地设置
               </button>
             </form>
+            <CloudSettings user={user} disabled={busy || !authReady} />
           </>
         )}
         {page === 'history' && (
@@ -446,7 +522,11 @@ function App() {
             <section className="intro">
               <div className="eyebrow">每一次认真记录，都值得留存</div>
               <h1>作品档案</h1>
-              <p>仅保存在当前浏览器。清除网站数据会同时删除记录。</p>
+              <p>
+                {user
+                  ? '当前使用云端历史，退出后可查看本机作品。'
+                  : '仅保存在当前浏览器。清除网站数据会同时删除记录。'}
+              </p>
             </section>
             {!history.length ? (
               <div className="empty-note">还没有作品，去工作台写下第一个选题吧。</div>

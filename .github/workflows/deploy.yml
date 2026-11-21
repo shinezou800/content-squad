@@ -24,6 +24,8 @@ jobs:
       - run: npm run build
         env:
           VITE_BASE_PATH: /content-squad/
+          VITE_SUPABASE_URL: https://tvxmlknddhwykgzxrvhl.supabase.co
+          VITE_SUPABASE_PUBLISHABLE_KEY: __PUBLISHABLE_KEY__
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
