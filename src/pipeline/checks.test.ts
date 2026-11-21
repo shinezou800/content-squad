@@ -15,26 +15,51 @@ const snapshot: Snapshot = [
 const wrap = (text: string) =>
   `⚠️ 模拟盘记录。${text}\n持仓披露：未提供。\n非投资建议。数据来源：腾讯行情、东方财富。`;
 describe('确定性核对', () => {
-  it.each(['30元-40元', '30-40', '30%-40%', '30倍-40倍'])('范围连接符不作为负号：%s', (range) => {
-    const data: Snapshot = [
-      {
-        code: '601088',
-        name: '中国神华',
-        fields: [30, 40].map((value) => ({
-          label: '数值',
-          value,
-          source: '腾讯',
-          fetchedAt: '今天',
-        })),
-      },
-    ];
-    expect(checkDraft(wrap(range), data)).toEqual([]);
-    const rangeData: Snapshot = [
-      { ...data[0], fields: [{ label: '区间', value: range, source: '腾讯', fetchedAt: '今天' }] },
-    ];
-    expect(checkDraft(wrap('30元、40元'), rangeData)).toEqual([]);
-    expect(checkDraft(wrap('-40元'), rangeData).some((f) => f.原文 === '-40')).toBe(true);
-  });
+  it.each(['30元-40元', '30-40', '30%-40%', '30倍-40倍', '30元 -40元', '30 -40'])(
+    '范围连接符不作为负号：%s',
+    (range) => {
+      const data: Snapshot = [
+        {
+          code: '601088',
+          name: '中国神华',
+          fields: [30, 40].map((value) => ({
+            label: '数值',
+            value,
+            source: '腾讯',
+            fetchedAt: '今天',
+          })),
+        },
+      ];
+      expect(checkDraft(wrap(range), data)).toEqual([]);
+      const rangeData: Snapshot = [
+        {
+          ...data[0],
+          fields: [{ label: '区间', value: range, source: '腾讯', fetchedAt: '今天' }],
+        },
+      ];
+      expect(checkDraft(wrap('30元、40元'), rangeData)).toEqual([]);
+      expect(checkDraft(wrap('-40元'), rangeData).some((f) => f.原文 === '-40')).toBe(true);
+    },
+  );
+  it.each(['今日-1.23%', '-1.23%', '今日 -1.23%', '涨跌：-1.23%'])(
+    '文本后的负号仍保留：%s',
+    (text) => {
+      const data: Snapshot = [
+        {
+          code: '601088',
+          name: '中国神华',
+          fields: [{ label: '涨跌幅', value: '-1.23%', source: '腾讯', fetchedAt: '今天' }],
+        },
+      ];
+      expect(checkDraft(wrap(text), data)).toEqual([]);
+      const positive: Snapshot = [{ ...data[0], fields: [{ ...data[0].fields[0], value: 1.23 }] }];
+      expect(checkDraft(wrap(text), positive).some((f) => f.原文 === '-1.23')).toBe(true);
+      const textSnapshot: Snapshot = [
+        { ...data[0], fields: [{ ...data[0].fields[0], value: text }] },
+      ];
+      expect(checkDraft(wrap('-1.23%'), textSnapshot)).toEqual([]);
+    },
+  );
   it.each([-1.23, '-1.23%'])('保留快照和正文的负号：%s', (value) => {
     const data: Snapshot = [
       {

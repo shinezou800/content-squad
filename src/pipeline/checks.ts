@@ -1,7 +1,7 @@
 import type { Snapshot } from '../data/market';
 export type Flag = { 原文: string; 问题: string; 数据源值: string };
 const numberPattern =
-  /(?<!\d)((?:(?<![\d元%％亿万千百倍股年月日])[+-])?\d[\d,]*(?:\.\d+)?)(万亿|亿|万)?/g;
+  /(?<!\d)((?:(?<![\d元%％亿万千百倍股]\s*)[+-])?\d[\d,]*(?:\.\d+)?)(万亿|亿|万)?/g;
 function unitScale(unit = ''): number {
   return unit.startsWith('万亿')
     ? 1e12
