@@ -21,6 +21,62 @@ function mockClient(data: unknown = [], error: unknown = null) {
   return { client: { from } as unknown as SupabaseClient, from, select, eq, order, upsert };
 }
 describe('Supabase 运行存储（仅模拟客户端）', () => {
+  it('同一运行的慢草稿不能覆盖后续编辑或拍板，按调用顺序保存快照', async () => {
+    const mock = mockClient();
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const writes: Run[] = [];
+    mock.upsert.mockImplementation(async ({ data }: { data: Run }) => {
+      if (!writes.length) await firstGate;
+      writes.push(data);
+      return { error: null };
+    });
+    const store = new SupabaseRuns(mock.client, 'owner');
+    const first = store.save(run);
+    const edited = { ...run, finalText: '最新正文' };
+    const second = store.save(edited);
+    const approved = store.save({ ...edited, status: 'approved' });
+    edited.finalText = '调用后被修改';
+    await vi.waitFor(() => expect(mock.upsert).toHaveBeenCalledTimes(1));
+    expect(writes).toEqual([]);
+    releaseFirst();
+    await Promise.all([first, second, approved]);
+    expect(writes.map((row) => [row.finalText, row.status])).toEqual([
+      ['正文', 'draft'],
+      ['最新正文', 'draft'],
+      ['最新正文', 'approved'],
+    ]);
+  });
+  it('前一次保存失败不阻塞同一运行的后续保存', async () => {
+    const mock = mockClient();
+    mock.upsert.mockResolvedValueOnce({ error: { code: '42501' } });
+    const store = new SupabaseRuns(mock.client, 'owner');
+    const first = store.save(run);
+    const second = store.save({ ...run, finalText: '重试正文', status: 'approved' });
+    await expect(first).rejects.toThrow('没有云端访问权限');
+    await expect(second).resolves.toBeUndefined();
+    expect(mock.upsert).toHaveBeenCalledTimes(2);
+    expect(mock.upsert.mock.calls[1][0].data.finalText).toBe('重试正文');
+  });
+  it('不同运行不相互阻塞', async () => {
+    const mock = mockClient();
+    let releaseFirst!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    mock.upsert.mockImplementationOnce(async () => {
+      await gate;
+      return { error: null };
+    });
+    const store = new SupabaseRuns(mock.client, 'owner');
+    const first = store.save(run);
+    await store.save({ ...run, id: 'other-run' });
+    expect(mock.upsert).toHaveBeenCalledTimes(2);
+    releaseFirst();
+    await first;
+  });
   it('按用户筛选、按时间倒序读取完整运行', async () => {
     const mock = mockClient([{ data: run }]);
     expect(await new SupabaseRuns(mock.client, 'owner').list()).toEqual([run]);

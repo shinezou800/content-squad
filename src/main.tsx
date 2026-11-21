@@ -36,13 +36,24 @@ function App() {
     if (!supabase) return;
     let active = true;
     let changed = false;
+    let currentUserId: string | undefined;
+    function applyUser(nextUser: User | null) {
+      if (currentUserId !== nextUser?.id) {
+        setTopic('');
+        setRun(undefined);
+        setHistory([]);
+        setMessage('');
+      }
+      currentUserId = nextUser?.id;
+      setUser(nextUser);
+      setAuthReady(true);
+    }
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       changed = true;
       if (active) {
-        setUser(session?.user ?? null);
-        setAuthReady(true);
+        applyUser(session?.user ?? null);
       }
     });
     supabase.auth
@@ -50,8 +61,7 @@ function App() {
       .then(({ data, error }) => {
         if (!active || changed) return;
         if (error) setMessage('云端登录状态读取失败，当前使用本地历史。');
-        setUser(data.session?.user ?? null);
-        setAuthReady(true);
+        applyUser(data.session?.user ?? null);
       })
       .catch(() => {
         if (active && !changed) {

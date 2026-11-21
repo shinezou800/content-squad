@@ -41,6 +41,8 @@ export class LocalStorageRuns implements RunStorage {
   }
 }
 export class SupabaseRuns implements RunStorage {
+  private pendingSaves = new Map<string, Promise<void>>();
+
   constructor(
     private client: SupabaseClient,
     private ownerId: string,
@@ -56,7 +58,7 @@ export class SupabaseRuns implements RunStorage {
     return (data ?? []).map((row) => row.data as Run);
   }
   async save(run: Run): Promise<void> {
-    const data: Run = {
+    const data: Run = structuredClone({
       id: run.id,
       squadId: run.squadId,
       topic: run.topic,
@@ -65,20 +67,31 @@ export class SupabaseRuns implements RunStorage {
       snapshot: run.snapshot,
       finalText: run.finalText,
       status: run.status,
-    };
-    const { error } = await this.client.from('runs').upsert(
-      {
-        id: run.id,
-        owner_id: this.ownerId,
-        squad_id: run.squadId,
-        topic: run.topic,
-        status: run.status,
-        data,
-        created_at: run.createdAt,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'id' },
-    );
-    if (error) throw new Error(cloudError(error));
+    });
+    const previous = this.pendingSaves.get(data.id) ?? Promise.resolve();
+    const pending = previous
+      .catch(() => {})
+      .then(async () => {
+        const { error } = await this.client.from('runs').upsert(
+          {
+            id: data.id,
+            owner_id: this.ownerId,
+            squad_id: data.squadId,
+            topic: data.topic,
+            status: data.status,
+            data,
+            created_at: data.createdAt,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'id' },
+        );
+        if (error) throw new Error(cloudError(error));
+      });
+    this.pendingSaves.set(data.id, pending);
+    try {
+      await pending;
+    } finally {
+      if (this.pendingSaves.get(data.id) === pending) this.pendingSaves.delete(data.id);
+    }
   }
 }
