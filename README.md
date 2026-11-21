@@ -61,4 +61,4 @@ VITE_BASE_PATH=/content-squad/ npm run build
 
 烟测是 Node 直接请求三个真实股票接口，不使用密钥；单元测试不需要外网。Node 通过并不等于浏览器跨域永远可用。
 
-仓库 Settings → Pages 的 Source 选择 **GitHub Actions**。工作流先测试构建，再通过 `actions/deploy-pages` 发布，子路径默认 `/content-squad/`。自定义域名或仓库改名需调整工作流的 `VITE_BASE_PATH`。部署工作流已填写项目 URL，公开发布密钥暂为 `__PUBLISHABLE_KEY__`，管理员需在发布前替换为该项目的公开发布密钥（环境中没有提供指定 token，因此未使用其他凭据）。本次仅本地提交，不推送或部署。云端适配器单测使用模拟客户端，不会写入真实 Supabase；迁移权限尚未在真实数据库执行验证。
+仓库 Settings → Pages 的 Source 选择 **GitHub Actions**。工作流先测试构建，再通过 `actions/deploy-pages` 发布，子路径默认 `/content-squad/`。自定义域名或仓库改名需调整工作流的 `VITE_BASE_PATH`。部署工作流已填写项目 URL 和公开发布密钥（publishable key，设计上可公开；service_role/secret key 绝不放进前端或仓库）。云端历史只有写入 `app_owner` 表的账号能读写，公开注册和匿名登录已关闭。
