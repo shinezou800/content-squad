@@ -3,7 +3,7 @@ import type { Settings } from '../settings';
 import type { Run } from '../storage';
 let fallbackSequence = 0;
 
-function createRunId(): string {
+export function createRunId(): string {
   if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID();
   return `${Date.now().toString(36)}-${(++fallbackSequence).toString(36)}-${Math.random().toString(36).slice(2)}`;
 }

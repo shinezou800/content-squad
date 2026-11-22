@@ -53,6 +53,13 @@ export function checkDraft(draft: string, snapshot: Snapshot): Flag[] {
   if (!/持仓披露[：:]/.test(closing)) add('', '结尾缺少持仓披露');
   if (!/非投资建议/.test(closing) || !/数据来源[：:]/.test(closing))
     add('', '结尾缺少非投资建议及数据来源披露');
+  return [...flags, ...checkNumbers(draft, snapshot)];
+}
+
+export function checkNumbers(draft: string, snapshot: Snapshot): Flag[] {
+  const flags: Flag[] = [];
+  const add = (原文: string, 问题: string, 数据源值: string) =>
+    flags.push({ 原文, 问题, 数据源值 });
   const values: { value: number; currency?: string }[] = [];
   for (const stock of snapshot) {
     values.push({ value: Number(stock.code), currency: 'non-monetary' });
