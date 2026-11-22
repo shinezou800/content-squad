@@ -138,6 +138,36 @@ it('延迟 JSON 聊天响应保持未包装且不注入心跳', async () => {
   source.close();
   expect(await response.json()).toEqual({ choices: [{ message: { content: 'JSON正文' } }] });
 });
+it.each(['\n\n', '\r\n\r\n', '\r\r'])('跨 chunk 的 %j 事件分隔后恢复心跳', async (delimiter) => {
+  vi.useFakeTimers();
+  const { handler, fetcher } = setup('owner', 100);
+  let source!: ReadableStreamDefaultController<Uint8Array>;
+  fetcher.mockResolvedValue(new Response(new ReadableStream<Uint8Array>({ start(controller) { source = controller; } }), { headers: { 'Content-Type': 'text/event-stream' } }));
+  const response = await handler(request('user-token', { ...body, path: 'chat/completions', payload: {} }));
+  const reader = response.body!.getReader();
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  source.enqueue(encoder.encode('data: {}'));
+  await reader.read();
+  const firstLineEnd = delimiter.slice(0, delimiter.length / 2);
+  for (const character of firstLineEnd) {
+    source.enqueue(encoder.encode(character));
+    await reader.read();
+  }
+  await vi.advanceTimersByTimeAsync(300);
+  for (const character of delimiter.slice(firstLineEnd.length)) {
+    source.enqueue(encoder.encode(character));
+    expect(decoder.decode((await reader.read()).value)).toBe(character);
+  }
+  await vi.advanceTimersByTimeAsync(100);
+  expect(decoder.decode((await reader.read()).value)).toBe(': ping\n\n');
+  source.enqueue(encoder.encode('data: next'));
+  expect(decoder.decode((await reader.read()).value)).toBe('data: next');
+  await vi.advanceTimersByTimeAsync(300);
+  source.close();
+  expect((await reader.read()).done).toBe(true);
+  expect(vi.getTimerCount()).toBe(0);
+});
 it.each(['end', 'error', 'cancel'])('心跳仅在事件边界注入，%s 时清理定时器', async (ending) => {
   vi.useFakeTimers();
   const { handler, fetcher } = setup('owner', 100);

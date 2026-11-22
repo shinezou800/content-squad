@@ -12,7 +12,8 @@ function heartbeat(body: ReadableStream<Uint8Array>, interval: number): Readable
   const reader = body.getReader();
   let timer: ReturnType<typeof setInterval>;
   let ended = false;
-  let lastByte = -1;
+  let previousCr = false;
+  let emptyLine = true;
   let boundary = true;
   let lastArrival = Date.now();
   const finish = () => { ended = true; clearInterval(timer); };
@@ -31,8 +32,14 @@ function heartbeat(body: ReadableStream<Uint8Array>, interval: number): Readable
             if (value.length) {
               lastArrival = Date.now();
               for (const byte of value) {
-                boundary = lastByte === 10 && byte === 10;
-                lastByte = byte;
+                if (byte === 13 || (byte === 10 && !previousCr)) {
+                  boundary = emptyLine;
+                  emptyLine = true;
+                } else if (byte !== 10) {
+                  boundary = false;
+                  emptyLine = false;
+                }
+                previousCr = byte === 13;
               }
             }
             controller.enqueue(value);
