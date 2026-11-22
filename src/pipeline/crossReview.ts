@@ -98,16 +98,21 @@ export function crossConflicts(
   for (const key of new Set(ours.map((item) => item.key))) {
     const a = ours.filter((item) => item.key === key);
     const b = theirs.filter((item) => item.key === key);
-    if (!b.length || a.some((x) => b.some((y) => close(x, y)))) continue;
+    if (!b.length) continue;
     const stock = snapshot.find((item) => item.code === key.split('|')[0]);
     const field = stock?.fields.find(
       (item) => item.label.includes(a[0].label) || a[0].label.includes(item.label),
     );
-    flags.push({
-      原文: a[0].sentence,
-      问题: `与「${reviewerTitle}」段矛盾：同一股票（${a[0].name}）${a[0].label}数字不同`,
-      依据: `「${reviewerTitle}」段写作：${b[0].sentence}${field ? `；快照：${field.label}=${field.value}${typeof field.value === 'number' ? field.unit : ''}` : ''}`,
-    });
+    const seen = new Set<string>();
+    for (const x of a) {
+      if (seen.has(x.sentence) || b.some((y) => close(x, y))) continue;
+      seen.add(x.sentence);
+      flags.push({
+        原文: x.sentence,
+        问题: `与「${reviewerTitle}」段矛盾：同一股票（${x.name}）${x.label}数字不同`,
+        依据: `「${reviewerTitle}」段写作：${b[0].sentence}${field ? `；快照：${field.label}=${field.value}${typeof field.value === 'number' ? field.unit : ''}` : ''}`,
+      });
+    }
   }
   return flags;
 }
