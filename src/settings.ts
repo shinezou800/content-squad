@@ -33,7 +33,7 @@ export function normalizeBaseUrl(value: string): string {
   const baseUrl = value.trim().replace(/\/+$/, '');
   try {
     const url = new URL(baseUrl);
-    if (!baseUrl.startsWith('https://') || !url.hostname || url.username || url.password || url.search || url.hash)
+    if (!baseUrl.startsWith('https://') || /[?#]/.test(value) || !url.hostname || url.username || url.password || url.search || url.hash)
       throw new Error();
   } catch {
     throw new Error('API 地址必须为有效的 https:// 地址，且不含账号、查询参数或片段。');

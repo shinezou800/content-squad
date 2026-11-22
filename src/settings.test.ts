@@ -26,7 +26,7 @@ it('保存时移除 API 地址尾部斜线', () => {
   saveSettings({ ...defaultSettings, baseUrl: 'https://example.com/v1///' });
   expect(loadSettings().baseUrl).toBe('https://example.com/v1');
 });
-it.each(['http://example.com/v1', 'example.com', 'https://', 'https://user:pass@example.com', 'https://example.com/?key=value'])('无效 API 地址不覆盖已保存设置 %s', (baseUrl) => {
+it.each(['http://example.com/v1', 'example.com', 'https://', 'https://user:pass@example.com', 'https://example.com/?key=value', 'https://example.com/v1?', 'https://example.com/v1#'])('无效 API 地址不覆盖已保存设置 %s', (baseUrl) => {
   saveSettings(defaultSettings);
   expect(() => saveSettings({ ...defaultSettings, baseUrl })).toThrow('API 地址');
   expect(loadSettings()).toEqual(defaultSettings);
