@@ -14,6 +14,45 @@ const snapshot: Snapshot = [
 ];
 const wrap = (text: string) =>
   `⚠️ 模拟盘记录。${text}\n持仓披露：未提供。\n非投资建议。数据来源：腾讯行情、东方财富。`;
+describe('派生数字与完整披露回归', () => {
+  const data: Snapshot = [{ code: '601088', name: '中国神华', fields: [
+    { label: '每股分红', value: 1.49, unit: '元', source: '手动', fetchedAt: '' },
+    { label: '每股收益', value: 3.04, unit: '元', source: '接口', fetchedAt: '' },
+  ] }];
+  it.each([0.93, 0.98, 0.59, 0.69, 0.44, 0.28, 0.49])('允许分红除以EPS得到的派息覆盖 %s', (ratio) => {
+    const stock = structuredClone(data);
+    stock[0].fields[0].value = ratio * 3.04;
+    expect(checkNumbers(`派息覆盖 ${ratio.toFixed(2)}`, stock)).toEqual([]);
+  });
+  it.each(['派息覆盖0.49', '派息率49.01%', '合计4.53元', '差额1.55元', '乘积4.53元'])('核对快照运算 %s', (text) => {
+    expect(checkNumbers(text, data)).toEqual([]);
+  });
+  it('保留错误派生数、无运算上下文数字、错误币种和零分母的标记', () => {
+    for (const text of ['派息覆盖0.77', '现价4.53元', '合计4.53港元', '派息覆盖999'])
+      expect(checkNumbers(text, data)).toHaveLength(1);
+    const zero = structuredClone(data);
+    zero[0].fields[1].value = 0;
+    expect(checkNumbers('派息覆盖0.49', zero)).toHaveLength(1);
+    expect(checkNumbers('派息覆盖0.49', [])).toHaveLength(1);
+    expect(checkNumbers('', data)).toEqual([]);
+  });
+  it('不跨币种推算覆盖率', () => {
+    const mixed = structuredClone(data);
+    mixed[0].fields[0].unit = '港元';
+    expect(checkNumbers('派息覆盖0.49', mixed)).toHaveLength(1);
+  });
+  it.each(['11 月 20 日', '2026 年 11 月 20 日', '2026年', '11月', '20日', '9时30分', '9点30分'])('排除日期时间 %s 但保留数据数字', (date) => {
+    expect(checkNumbers(`${date}，现价999元`, []).map((f) => f.原文)).toEqual(['999']);
+  });
+  it.each(['⚠', '⚠️'])('从完整正文发现 %s 声明及持仓披露', (warning) => {
+    const draft = `──────── AI手记 ────────\n# 实测记录\n${warning} 前置声明\n${'这是实测说明。'.repeat(30)}模拟盘记录。\n持仓披露 ：未提供。\n非投资建议。数据来源 ：腾讯。\n${'这是流程记录。'.repeat(80)}`;
+    expect(checkDraft(draft, [])).toEqual([]);
+  });
+  it('缺失声明或持仓披露仍标记', () => {
+    expect(checkDraft('模拟盘记录。持仓披露：无。非投资建议。数据来源：腾讯。', []).map((f) => f.问题)).toEqual(['开篇需有 ⚠️ 前置声明及模拟盘记录']);
+    expect(checkDraft('⚠️ 模拟盘记录。非投资建议。数据来源：腾讯。', []).map((f) => f.问题)).toEqual(['结尾缺少持仓披露']);
+  });
+});
 describe('模型核对数值容差', () => {
   it.each([
     ['主人手动提供每股分红1.49港元', '接口核实每股分红1.49港元', '事实不符'],
