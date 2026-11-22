@@ -10,7 +10,7 @@ export async function readSegment(response: Response): Promise<Segment> {
   let started = false;
   let skipLf = false;
   let data: string[] = [];
-  const dispatch = () => {
+  const dispatch = (truncated = false) => {
     if (!data.length) return;
     const value = data.join('\n');
     data = [];
@@ -20,35 +20,44 @@ export async function readSegment(response: Response): Promise<Segment> {
     }
     let event;
     try { event = JSON.parse(value); }
-    catch { throw new Error('模型流式返回格式无效，请稍后重试。'); }
+    catch {
+      if (truncated) return;
+      throw new Error('模型流式返回格式无效，请稍后重试。');
+    }
     if (event?.error) throw modelStreamError(event.error);
     const choice = event?.choices?.[0];
     if (typeof choice?.delta?.content === 'string') segment.text += choice.delta.content;
     if (typeof choice?.finish_reason === 'string') segment.finishReason = choice.finish_reason;
   };
+  const readField = (line: string) => {
+    if (line === 'data') data.push('');
+    else if (line.startsWith('data:')) data.push(line.slice(5).replace(/^ /, ''));
+  };
+  const finishSse = () => {
+    readField(buffer + decoder.decode());
+    dispatch(true);
+    return segment;
+  };
   try {
     while (true) {
       let chunk: ReadableStreamReadResult<Uint8Array>;
       try { chunk = await reader.read(); }
-      catch { return segment; }
+      catch { return mode === 'sse' ? finishSse() : segment; }
       if (chunk.done) {
+        if (mode === 'sse') return finishSse();
         buffer += decoder.decode();
-        if (mode !== 'sse') {
-          let json;
-          try { json = JSON.parse(buffer); }
-          catch { throw new Error('模型返回格式无法识别，请稍后重试。'); }
-          if (json?.error) throw modelStreamError(json.error);
-          if (!json || typeof json !== 'object' || !Array.isArray(json.choices))
-            throw new Error('模型返回格式无法识别，请稍后重试。');
-          const choice = json?.choices?.[0];
-          return {
-            text: typeof choice?.message?.content === 'string' ? choice.message.content : '',
-            finishReason: choice?.finish_reason,
-            done: true,
-          };
-        }
-        dispatch();
-        return segment;
+        let json;
+        try { json = JSON.parse(buffer); }
+        catch { throw new Error('模型返回格式无法识别，请稍后重试。'); }
+        if (json?.error) throw modelStreamError(json.error);
+        if (!json || typeof json !== 'object' || !Array.isArray(json.choices))
+          throw new Error('模型返回格式无法识别，请稍后重试。');
+        const choice = json.choices[0];
+        return {
+          text: typeof choice?.message?.content === 'string' ? choice.message.content : '',
+          finishReason: choice?.finish_reason,
+          done: true,
+        };
       }
       buffer += decoder.decode(chunk.value, { stream: true });
       if (!mode && !started) {
@@ -77,8 +86,7 @@ export async function readSegment(response: Response): Promise<Segment> {
           else if (!buffer.length) skipLf = true;
         }
         if (!line) dispatch();
-        else if (line === 'data') data.push('');
-        else if (line.startsWith('data:')) data.push(line.slice(5).replace(/^ /, ''));
+        else readField(line);
         if (segment.done || segment.finishReason !== undefined) return segment;
       }
     }

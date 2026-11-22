@@ -13,7 +13,7 @@ export function createProxyHandler(deps: Dependencies) {
     const cors = new Headers({
       'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Expose-Headers': 'content-type',
+      'Access-Control-Expose-Headers': 'content-type, x-llm-proxy-error',
       'Vary': 'Origin',
       'Cache-Control': 'no-store',
     });
@@ -32,15 +32,20 @@ export function createProxyHandler(deps: Dependencies) {
     let target;
     try { target = proxyTarget(await request.json(), deps.allowedHosts); }
     catch { return fail(403, 'Invalid or forbidden endpoint'); }
+    let upstream: Response;
     try {
-      const upstream = await deps.fetch(target.url, {
+      upstream = await deps.fetch(target.url, {
         method: target.input.path === 'models' ? 'GET' : 'POST',
         headers: { Authorization: `Bearer ${target.input.key}`, 'Content-Type': 'application/json' },
         ...(target.input.path === 'chat/completions' ? { body: JSON.stringify({ ...target.input.payload, stream: true }) } : {}),
         redirect: 'manual',
       });
-      cors.set('Content-Type', upstream.headers.get('content-type') || 'application/json');
-      return new Response(upstream.body, { status: upstream.status, headers: cors });
-    } catch { return fail(502, 'Upstream unavailable'); }
+    } catch {
+      cors.set('X-LLM-Proxy-Error', 'upstream-network');
+      return fail(502, 'Upstream connection failed before an HTTP response');
+    }
+    if (!upstream.ok) cors.set('X-LLM-Proxy-Error', 'upstream-http');
+    cors.set('Content-Type', upstream.headers.get('content-type') || 'application/json');
+    return new Response(upstream.body, { status: upstream.status, headers: cors });
   };
 }

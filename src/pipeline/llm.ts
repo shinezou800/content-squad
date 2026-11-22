@@ -1,11 +1,19 @@
-import type { Settings } from '../settings';
+import { normalizeBaseUrl, type Settings } from '../settings';
 import { filterModelCheck } from './checks';
-import { providerRequest, checkProviderStatus } from './providerRequest';
+import { providerRequest, checkProviderStatus, proxyStatusError } from './providerRequest';
 import { readSegment } from './stream';
 
+const proxyMaxTokens = 2048;
+const relayRetryStatuses = new Set([502, 504, 546]);
+const radeonThinkingModels = new Set(['glm-5.3-flash', 'qwen3.8-27b']);
+
 async function proxyContent(settings: Settings, system: string, user: string): Promise<string> {
+  const canReduceThinking = new URL(normalizeBaseUrl(settings.baseUrl)).hostname === 'developer.amd.com.cn'
+    && radeonThinkingModels.has(settings.model.toLowerCase());
+  let reduceThinking = false;
   let text = '';
   let noProgress = 0;
+  let relayError: Error | undefined;
   const initial = [{ role: 'system', content: system }, { role: 'user', content: user }];
   for (let attempt = 1; attempt <= 12; attempt++) {
     const messages = text ? [...initial,
@@ -15,26 +23,34 @@ async function proxyContent(settings: Settings, system: string, user: string): P
     let response: Response | undefined;
     try {
       response = await providerRequest(settings, 'chat/completions', settings.key, {
-        model: settings.model, messages, stream: true, max_tokens: 4096,
+        model: settings.model, messages, stream: true, max_tokens: proxyMaxTokens,
+        ...(reduceThinking ? { reasoning_effort: 'low' } : {}),
       });
     } catch (error) {
       if (!(error instanceof TypeError)) throw error;
     }
     let added = '';
-    if (response && response.status !== 546) {
-      checkProviderStatus(response);
+    if (response?.ok) {
       const segment = await readSegment(response);
       added = segment.text;
       text += added;
       if (segment.finishReason != null && segment.finishReason !== 'length' && segment.finishReason !== 'stop')
         throw new Error(`模型提前结束生成（${segment.finishReason}），请调整内容后重试。`);
       if (segment.finishReason !== 'length' && (segment.done || segment.finishReason === 'stop')) return text;
-    } else if (response?.body) {
-      void response.body.cancel().catch(() => {});
+      // Radeon counts reasoning against max_tokens, so a reasoning-only retry needs a lower effort.
+      if (!added && canReduceThinking) reduceThinking = true;
+    } else if (response) {
+      const upstreamHttp = response.headers.get('x-llm-proxy-error') === 'upstream-http';
+      if (upstreamHttp || !relayRetryStatuses.has(response.status)) {
+        if (response.status === 401 || response.status === 429) checkProviderStatus(response);
+        throw await proxyStatusError(response, settings.key);
+      }
+      relayError = await proxyStatusError(response, settings.key);
     }
+    if (added) relayError = undefined;
     noProgress = added ? 0 : noProgress + 1;
     if (noProgress >= 3 || attempt === 12)
-      throw new Error(`模型流式返回中途断开（已重试 ${attempt} 次），请稍后重试。`);
+      throw new Error(`模型流式返回中途断开（已重试 ${attempt} 次），请稍后重试。${relayError ? ` ${relayError.message}` : ''}`);
   }
   throw new Error('模型流式返回中途断开，请稍后重试。');
 }
