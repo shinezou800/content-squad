@@ -77,6 +77,7 @@ it('聊天强制 stream:true 并原样传递 SSE 流及状态，不缓冲正文'
   expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({ model: 'test', stream: true });
   expect(response.status).toBe(201);
   expect(response.headers.get('content-type')).toBe('text/event-stream');
+  expect(response.headers.get('access-control-expose-headers')).toBe('content-type');
   expect(response.body).toBe(upstream.body);
   controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
   controller.close();
