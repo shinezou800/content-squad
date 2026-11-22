@@ -1,4 +1,5 @@
 import type { Settings } from '../settings';
+import { filterModelCheck } from './checks';
 export async function complete(settings: Settings, system: string, user: string) {
   if (!settings.key.trim()) throw new Error('请先在设置中填写 OpenRouter API 密钥。');
   const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -19,5 +20,12 @@ export async function complete(settings: Settings, system: string, user: string)
   const json = await res.json();
   const content = json.choices?.[0]?.message?.content;
   if (typeof content !== 'string' || !content.trim()) throw new Error('模型返回空内容，请重试。');
+  try {
+    const input = JSON.parse(user);
+    if (typeof input?.draft === 'string' && Array.isArray(input.snapshot))
+      return filterModelCheck(content);
+  } catch {
+    // Non-JSON requests retain the original response.
+  }
   return content;
 }

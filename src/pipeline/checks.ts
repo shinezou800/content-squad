@@ -50,6 +50,10 @@ function* numberMatches(text: string, snapshot: Snapshot, skipDerived = false) {
       match[2] = '';
       match[3] = '';
     }
+    const prefix = text.slice(0, match.index);
+    if (!/^[+-]/.test(match[1]) && /^\s*[%％]/.test(text.slice(match.index + match[0].length))) {
+      if (/(?:下跌|微跌|跌|下滑|回落)\s*$/.test(prefix)) match[1] = '-' + match[1];
+    }
     yield match;
   }
 }
@@ -70,6 +74,54 @@ function unitScale(unit = ''): number {
       : unit.startsWith('万')
         ? 1e4
         : 1;
+}
+
+export function withinNumberTolerance(raw: number, source: number, digits: number, scale = 1): boolean {
+  const value = source / scale;
+  const epsilon = 4 * Number.EPSILON * Math.max(1, Math.abs(value), Math.abs(raw));
+  return Number.isFinite(raw) && Number.isFinite(value) &&
+    Math.abs(value - raw) <= 0.5 / 10 ** Math.min(digits, 2) + epsilon;
+}
+
+function singleModelNumber(text: string) {
+  if (stripTimestamps(text) !== text) return;
+  const matches = [...numberMatches(text, [])];
+  if (matches.length !== 1) return;
+  const m = matches[0];
+  const suffix = text.slice(m.index + m[0].length).trim();
+  const unit = suffix.match(/^[%％倍股]/)?.[0] || '';
+  if (suffix && !unit) return;
+  if (unit && suffix !== unit) return;
+  return {
+    context: text.slice(0, m.index).trim(),
+    raw: Number(m[1].replaceAll(',', '')),
+    digits: m[1].split('.')[1]?.length || 0,
+    scale: unitScale(m[2]),
+    kind: unit === '％' ? '%' : unit || (m[2] || m[3] ? 'money' : 'bare'),
+    currency: currencyOf(m[3]),
+  };
+}
+
+export function filterModelCheck(result: string): string {
+  const fenced = /^(\s*```(?:json)?\s*\n)([\s\S]*?)(\n```\s*)$/.exec(result);
+  try {
+    const items: unknown = JSON.parse(fenced ? fenced[2] : result);
+    if (!Array.isArray(items)) return result;
+    const kept = items.filter((item) => {
+      if (!item || typeof item.原文 !== 'string' || typeof item.数据源值 !== 'string' || typeof item.问题 !== 'string') return true;
+      if (/来源|口径|出处|手动|接口|单位|币种/.test(item.问题)) return true;
+      const draft = singleModelNumber(item.原文);
+      const source = singleModelNumber(item.数据源值);
+      if (!draft || !source || draft.kind !== source.kind || draft.currency !== source.currency) return true;
+      if (source.context && source.context !== draft.context) return true;
+      return !withinNumberTolerance(draft.raw, source.raw * source.scale, draft.digits, draft.scale);
+    });
+    if (kept.length === items.length) return result;
+    const json = JSON.stringify(kept, null, 2);
+    return fenced ? fenced[1] + json + fenced[3] : json;
+  } catch {
+    return result;
+  }
 }
 
 export function checkDraft(draft: string, snapshot: Snapshot): Flag[] {
@@ -136,16 +188,13 @@ export function checkNumbers(draft: string, snapshot: Snapshot): Flag[] {
     const raw = Number(m[1].replaceAll(',', ''));
     const scale = unitScale(m[2]);
     const digits = Math.min(m[1].split('.')[1]?.length || 0, 2);
-    const precision = 10 ** digits;
     const currency = currencyOf(m[3]);
     if (
       !values.some(
         (v) => {
-          const value = v.value / scale;
-          const epsilon = 4 * Number.EPSILON * Math.max(1, Math.abs(value), Math.abs(raw));
           return (
             (!currency || !v.currency || currency === v.currency) &&
-            Math.abs(value - raw) <= 0.5 / precision + epsilon
+            withinNumberTolerance(raw, v.value, digits, scale)
           );
         },
       )
