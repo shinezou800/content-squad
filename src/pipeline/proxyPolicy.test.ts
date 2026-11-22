@@ -1,4 +1,4 @@
-import { expect, it, vi } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { allowedOrigin, proxyTarget } from '../../supabase/functions/llm-proxy/policy.ts';
 import { createProxyHandler } from '../../supabase/functions/llm-proxy/handler.ts';
 
@@ -26,10 +26,11 @@ it.each([
   ['https://shinezou800.github.io.evil.example', false], ['http://localhost.evil.example', false], ['', false],
 ])('Origin %s → %s', (origin, expected) => expect(allowedOrigin(origin)).toBe(expected));
 
-function setup(userId: string | undefined = 'owner') {
+afterEach(() => { vi.useRealTimers(); });
+function setup(userId: string | undefined = 'owner', heartbeatMs?: number) {
   const fetcher = vi.fn().mockResolvedValue(new Response('{"error":"limited"}', { status: 429, headers: { 'Content-Type': 'application/json' } }));
   const getUserId = vi.fn().mockResolvedValue(userId);
-  return { fetcher, getUserId, handler: createProxyHandler({ ownerId: 'owner', allowedHosts: 'developer.amd.com.cn', getUserId, fetch: fetcher }) };
+  return { fetcher, getUserId, handler: createProxyHandler({ ownerId: 'owner', allowedHosts: 'developer.amd.com.cn', getUserId, fetch: fetcher, heartbeatMs }) };
 }
 function request(token = 'user-token', input: unknown = body) {
   return new Request('https://proxy.example', { method: 'POST', headers: { Origin: 'https://shinezou800.github.io', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(input) });
@@ -77,8 +78,7 @@ it('聊天强制 stream:true 并原样传递 SSE 流及状态，不缓冲正文'
   expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({ model: 'test', stream: true });
   expect(response.status).toBe(201);
   expect(response.headers.get('content-type')).toBe('text/event-stream');
-  expect(response.headers.get('access-control-expose-headers')).toBe('content-type, x-llm-proxy-error');
-  expect(response.body).toBe(upstream.body);
+  expect(response.headers.get('access-control-expose-headers')).toBe('content-type, x-llm-proxy-error, retry-after');
   controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
   controller.close();
   expect(await response.text()).toBe('data: [DONE]\n\n');
@@ -100,11 +100,105 @@ it('上游 HTTP 502 透传原始状态、类型和错误正文', async () => {
   expect(response.headers.get('content-type')).toBe('application/problem+json');
   expect(await response.text()).toBe(errorBody);
 });
-it('上游网络失败标记为未收到 HTTP 响应，不暴露异常内部信息', async () => {
+it('429 透传 Retry-After 并允许浏览器读取', async () => {
   const { handler, fetcher } = setup();
-  fetcher.mockRejectedValue(new TypeError('private upstream detail'));
+  fetcher.mockResolvedValue(Response.json({ error: 'rate limit' }, { status: 429, headers: { 'Retry-After': '15' } }));
+  const response = await handler(request());
+  expect(response.headers.get('retry-after')).toBe('15');
+  expect(response.headers.get('access-control-expose-headers')).toContain('retry-after');
+});
+it('上游网络失败提供异常名称和消息，不暴露请求密钥', async () => {
+  const { handler, fetcher } = setup();
+  fetcher.mockRejectedValue(new TypeError('fetch failed test-only'));
   const response = await handler(request());
   expect(response.status).toBe(502);
   expect(response.headers.get('x-llm-proxy-error')).toBe('upstream-network');
-  expect(await response.json()).toEqual({ error: 'Upstream connection failed before an HTTP response' });
+  expect(await response.json()).toEqual({ error: 'Upstream unavailable: TypeError: fetch failed [redacted]' });
+});
+it('网络诊断隐藏完整请求 payload 并截断到 200 字符', async () => {
+  const { handler, fetcher } = setup();
+  const payload = { model: 'test', messages: [{ role: 'user', content: 'private prompt' }] };
+  fetcher.mockRejectedValue(new Error(JSON.stringify(payload) + 'x'.repeat(300)));
+  const response = await handler(request('user-token', { ...body, path: 'chat/completions', payload }));
+  const json = await response.json();
+  expect(json.error).not.toContain('private prompt');
+  expect(json.error.length).toBe(200);
+});
+it('延迟 JSON 聊天响应保持未包装且不注入心跳', async () => {
+  vi.useFakeTimers();
+  const { handler, fetcher } = setup('owner', 100);
+  let source!: ReadableStreamDefaultController<Uint8Array>;
+  const upstream = new Response(new ReadableStream<Uint8Array>({ start(controller) { source = controller; } }), { headers: { 'Content-Type': 'application/json' } });
+  fetcher.mockResolvedValue(upstream);
+  const response = await handler(request('user-token', { ...body, path: 'chat/completions', payload: {} }));
+  expect(response.body).toBe(upstream.body);
+  await vi.advanceTimersByTimeAsync(20_000);
+  expect(vi.getTimerCount()).toBe(0);
+  source.enqueue(new TextEncoder().encode('{"choices":[{"message":{"content":"JSON正文"}}]}'));
+  source.close();
+  expect(await response.json()).toEqual({ choices: [{ message: { content: 'JSON正文' } }] });
+});
+it.each(['\n\n', '\r\n\r\n', '\r\r'])('跨 chunk 的 %j 事件分隔后恢复心跳', async (delimiter) => {
+  vi.useFakeTimers();
+  const { handler, fetcher } = setup('owner', 100);
+  let source!: ReadableStreamDefaultController<Uint8Array>;
+  fetcher.mockResolvedValue(new Response(new ReadableStream<Uint8Array>({ start(controller) { source = controller; } }), { headers: { 'Content-Type': 'text/event-stream' } }));
+  const response = await handler(request('user-token', { ...body, path: 'chat/completions', payload: {} }));
+  const reader = response.body!.getReader();
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  source.enqueue(encoder.encode('data: {}'));
+  await reader.read();
+  const firstLineEnd = delimiter.slice(0, delimiter.length / 2);
+  for (const character of firstLineEnd) {
+    source.enqueue(encoder.encode(character));
+    await reader.read();
+  }
+  await vi.advanceTimersByTimeAsync(300);
+  for (const character of delimiter.slice(firstLineEnd.length)) {
+    source.enqueue(encoder.encode(character));
+    expect(decoder.decode((await reader.read()).value)).toBe(character);
+  }
+  await vi.advanceTimersByTimeAsync(100);
+  expect(decoder.decode((await reader.read()).value)).toBe(': ping\n\n');
+  source.enqueue(encoder.encode('data: next'));
+  expect(decoder.decode((await reader.read()).value)).toBe('data: next');
+  await vi.advanceTimersByTimeAsync(300);
+  source.close();
+  expect((await reader.read()).done).toBe(true);
+  expect(vi.getTimerCount()).toBe(0);
+});
+it.each(['end', 'error', 'cancel'])('心跳仅在事件边界注入，%s 时清理定时器', async (ending) => {
+  vi.useFakeTimers();
+  const { handler, fetcher } = setup('owner', 100);
+  let source!: ReadableStreamDefaultController<Uint8Array>;
+  const cancel = vi.fn();
+  fetcher.mockResolvedValue(new Response(new ReadableStream<Uint8Array>({ start(controller) { source = controller; }, cancel }), { headers: { 'Content-Type': 'text/event-stream' } }));
+  const response = await handler(request('user-token', { ...body, path: 'chat/completions', payload: {} }));
+  const reader = response.body!.getReader();
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  await vi.advanceTimersByTimeAsync(100);
+  expect(decoder.decode((await reader.read()).value)).toBe(': ping\n\n');
+  source.enqueue(encoder.encode('data: {"partial":'));
+  expect(decoder.decode((await reader.read()).value)).toBe('data: {"partial":');
+  await vi.advanceTimersByTimeAsync(300);
+  source.enqueue(encoder.encode('true}\n'));
+  expect(decoder.decode((await reader.read()).value)).toBe('true}\n');
+  await vi.advanceTimersByTimeAsync(100);
+  source.enqueue(encoder.encode('\n'));
+  expect(decoder.decode((await reader.read()).value)).toBe('\n');
+  await vi.advanceTimersByTimeAsync(100);
+  expect(decoder.decode((await reader.read()).value)).toBe(': ping\n\n');
+  if (ending === 'end') {
+    source.close();
+    expect((await reader.read()).done).toBe(true);
+  } else if (ending === 'error') {
+    source.error(new Error('broken'));
+    await expect(reader.read()).rejects.toThrow('broken');
+  } else {
+    await reader.cancel('client stopped');
+    expect(cancel).toHaveBeenCalledWith('client stopped');
+  }
+  expect(vi.getTimerCount()).toBe(0);
 });

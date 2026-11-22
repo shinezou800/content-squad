@@ -22,6 +22,54 @@ function sse(chunks: (string | Uint8Array)[], broken = false) {
   return new Response(body, { headers: { 'Content-Type': 'text/event-stream; charset=utf-8' } });
 }
 function success(text = '完成') { return sse([event(text, 'stop'), 'data: [DONE]\n\n']); }
+it.each(['2', new Date(Date.now() + 120_000).toUTCString()])('429 Retry-After 等待后续写，正文不丢失：%s', async (header) => {
+  const sleep = vi.fn().mockResolvedValue(undefined);
+  const fetcher = vi.fn().mockResolvedValueOnce(sse([event('前文')], true))
+    .mockResolvedValueOnce(Response.json({ error: { message: 'Too many requests' } }, { status: 429, headers: { 'Retry-After': header } }))
+    .mockResolvedValueOnce(success('后文'));
+  vi.stubGlobal('fetch', fetcher);
+  expect(await complete(settings, '', '', { sleep })).toBe('前文后文');
+  expect(sleep).toHaveBeenCalledWith(header === '2' ? 2000 : 60_000);
+  expect(payload(fetcher, 1)).toEqual(payload(fetcher, 2));
+  expect(payload(fetcher, 2).messages[2]).toEqual({ role: 'assistant', content: '前文' });
+});
+it.each([['Too many requests', '限流'], ['insufficient balance', '额度用尽']])('429 耗尽重试保留上游原因：%s', async (message, cause) => {
+  const sleep = vi.fn().mockResolvedValue(undefined);
+  const fetcher = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ error: { message } }, { status: 429 })));
+  vi.stubGlobal('fetch', fetcher);
+  const error = await complete(settings, '', '', { sleep }).catch((error: Error) => error);
+  if (!(error instanceof Error)) throw new Error('预期请求失败');
+  expect(error.message).toContain(`模型接口${cause}（429）：${message}`);
+  if (cause === '限流') expect(error.message).not.toContain('额度');
+  expect(sleep.mock.calls.map(([delay]) => delay)).toEqual([5000, 10_000, 20_000]);
+  expect(fetcher).toHaveBeenCalledTimes(4);
+});
+it('429 重试不消耗无进展计数', async () => {
+  const fetcher = vi.fn().mockResolvedValueOnce(sse([], true)).mockResolvedValueOnce(sse([], true))
+    .mockResolvedValueOnce(new Response('', { status: 429 }))
+    .mockResolvedValueOnce(new Response('', { status: 429 }))
+    .mockResolvedValueOnce(new Response('', { status: 429 })).mockResolvedValueOnce(success());
+  vi.stubGlobal('fetch', fetcher);
+  expect(await complete(settings, '', '', { sleep: async () => {} })).toBe('完成');
+  expect(fetcher).toHaveBeenCalledTimes(6);
+});
+it.each(['reasoning_content', 'reasoning'])('仅收到 %s 的断流明确提示思考过久', async (field) => {
+  const fetcher = vi.fn().mockImplementation(() => Promise.resolve(sse([
+    `data: ${JSON.stringify({ choices: [{ delta: { [field]: '思考' } }] })}\n\n`,
+  ], true)));
+  vi.stubGlobal('fetch', fetcher);
+  await expect(complete(settings, '', '')).rejects.toThrow('模型思考过久、未在转发端 150 秒上限内输出正文（已重试 3 次）');
+  expect(fetcher).toHaveBeenCalledTimes(3);
+});
+it('心跳和 reasoning_content 不进入正文，断流后从已收到正文续写', async () => {
+  const reasoning = 'data: {"choices":[{"delta":{"reasoning_content":"推理内容"}}]}\n\n';
+  const fetcher = vi.fn().mockResolvedValueOnce(sse([': ping\n\n', reasoning, event('已写正文'), ': ping\n\n'], true))
+    .mockResolvedValueOnce(sse([': ping\n\n', event('续写正文', 'stop')]));
+  vi.stubGlobal('fetch', fetcher);
+  expect(await complete(settings, '', '')).toBe('已写正文续写正文');
+  expect(payload(fetcher, 1).messages[2]).toEqual({ role: 'assistant', content: '已写正文' });
+  expect(payload(fetcher, 1).max_tokens).toBe(1024);
+});
 function withoutSseHeader(chunks: string[], broken = false, contentType?: string) {
   return new Response(sse(chunks, broken).body, { headers: contentType ? { 'Content-Type': contentType } : {} });
 }
@@ -105,7 +153,7 @@ it('length 续写带上完整 assistant 正文并拼接最终结果', async () =
   const fetcher = vi.fn().mockResolvedValueOnce(sse([event('第一段', 'length'), 'data: [DONE]\n\n'])).mockResolvedValueOnce(success('第二段'));
   vi.stubGlobal('fetch', fetcher);
   expect(await complete(settings, '规则', '选题')).toBe('第一段第二段');
-  expect(payload(fetcher, 0)).toEqual({ model: settings.model, messages: [{ role: 'system', content: '规则' }, { role: 'user', content: '选题' }], stream: true, max_tokens: 2048 });
+  expect(payload(fetcher, 0)).toEqual({ model: settings.model, messages: [{ role: 'system', content: '规则' }, { role: 'user', content: '选题' }], stream: true, max_tokens: 1024 });
   expect(payload(fetcher, 1).messages).toEqual([
     ...payload(fetcher, 0).messages,
     { role: 'assistant', content: '第一段' },
@@ -196,11 +244,11 @@ it('上游 HTTP 502 保留响应状态和错误详情，不重试或暴露请求
   expect(fetcher).toHaveBeenCalledTimes(1);
 });
 it('转发连接失败耗尽重试时保留最后的状态和诊断', async () => {
-  const fetcher = vi.fn().mockImplementation(() => Response.json({ error: 'No upstream HTTP response' }, {
+  const fetcher = vi.fn().mockImplementation(() => Response.json({ error: 'Upstream unavailable: TypeError: fetch failed' }, {
     status: 502, headers: { 'X-LLM-Proxy-Error': 'upstream-network' },
   }));
   vi.stubGlobal('fetch', fetcher);
-  await expect(complete(settings, '', '')).rejects.toThrow('模型请求失败（502），No upstream HTTP response');
+  await expect(complete(settings, '', '')).rejects.toThrow('模型请求失败（502），Upstream unavailable: TypeError: fetch failed');
   expect(fetcher).toHaveBeenCalledTimes(3);
 });
 it('后续 fetch TypeError 作为中断重试，不误报浏览器 CORS', async () => {

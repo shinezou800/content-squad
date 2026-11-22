@@ -5,7 +5,56 @@ type Dependencies = {
   allowedHosts: string;
   getUserId: (token: string) => Promise<string | undefined>;
   fetch: typeof fetch;
+  heartbeatMs?: number;
 };
+
+function heartbeat(body: ReadableStream<Uint8Array>, interval: number): ReadableStream<Uint8Array> {
+  const reader = body.getReader();
+  let timer: ReturnType<typeof setInterval>;
+  let ended = false;
+  let previousCr = false;
+  let emptyLine = true;
+  let boundary = true;
+  let lastArrival = Date.now();
+  const finish = () => { ended = true; clearInterval(timer); };
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      timer = setInterval(() => {
+        if (!ended && boundary && Date.now() - lastArrival >= interval)
+          controller.enqueue(new TextEncoder().encode(': ping\n\n'));
+      }, interval);
+      void (async () => {
+        try {
+          while (!ended) {
+            const { value, done } = await reader.read();
+            if (ended) return;
+            if (done) { finish(); controller.close(); return; }
+            if (value.length) {
+              lastArrival = Date.now();
+              for (const byte of value) {
+                if (byte === 13 || (byte === 10 && !previousCr)) {
+                  boundary = emptyLine;
+                  emptyLine = true;
+                } else if (byte !== 10) {
+                  boundary = false;
+                  emptyLine = false;
+                }
+                previousCr = byte === 13;
+              }
+            }
+            controller.enqueue(value);
+          }
+        } catch (error) {
+          if (!ended) { finish(); controller.error(error); }
+        } finally { reader.releaseLock(); }
+      })();
+    },
+    async cancel(reason) {
+      finish();
+      await reader.cancel(reason);
+    },
+  });
+}
 
 export function createProxyHandler(deps: Dependencies) {
   return async (request: Request): Promise<Response> => {
@@ -13,7 +62,7 @@ export function createProxyHandler(deps: Dependencies) {
     const cors = new Headers({
       'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Expose-Headers': 'content-type, x-llm-proxy-error',
+      'Access-Control-Expose-Headers': 'content-type, x-llm-proxy-error, retry-after',
       'Vary': 'Origin',
       'Cache-Control': 'no-store',
     });
@@ -40,12 +89,21 @@ export function createProxyHandler(deps: Dependencies) {
         ...(target.input.path === 'chat/completions' ? { body: JSON.stringify({ ...target.input.payload, stream: true }) } : {}),
         redirect: 'manual',
       });
-    } catch {
+    } catch (error) {
       cors.set('X-LLM-Proxy-Error', 'upstream-network');
-      return fail(502, 'Upstream connection failed before an HTTP response');
+      let detail = error instanceof Error ? `${error.name}: ${error.message}` : 'Unknown error';
+      const payload = JSON.stringify(target.input.payload);
+      if (payload) detail = detail.split(payload).join('[redacted]');
+      if (target.input.key) detail = detail.split(target.input.key).join('[redacted]');
+      return fail(502, `Upstream unavailable: ${detail}`.slice(0, 200));
     }
     if (!upstream.ok) cors.set('X-LLM-Proxy-Error', 'upstream-http');
+    const retryAfter = upstream.headers.get('retry-after');
+    if (retryAfter) cors.set('Retry-After', retryAfter);
     cors.set('Content-Type', upstream.headers.get('content-type') || 'application/json');
-    return new Response(upstream.body, { status: upstream.status, headers: cors });
+    const body = upstream.ok && upstream.body && target.input.path === 'chat/completions'
+      && upstream.headers.get('content-type')?.toLowerCase().includes('text/event-stream')
+      ? heartbeat(upstream.body, deps.heartbeatMs ?? 10_000) : upstream.body;
+    return new Response(body, { status: upstream.status, headers: cors });
   };
 }

@@ -1,4 +1,4 @@
-export type Segment = { text: string; finishReason?: string; done: boolean };
+export type Segment = { text: string; finishReason?: string; done: boolean; reasoning?: boolean };
 
 export async function readSegment(response: Response): Promise<Segment> {
   const segment: Segment = { text: '', done: false };
@@ -26,6 +26,7 @@ export async function readSegment(response: Response): Promise<Segment> {
     }
     if (event?.error) throw modelStreamError(event.error);
     const choice = event?.choices?.[0];
+    if (choice?.delta?.reasoning_content || choice?.delta?.reasoning) segment.reasoning = true;
     if (typeof choice?.delta?.content === 'string') segment.text += choice.delta.content;
     if (typeof choice?.finish_reason === 'string') segment.finishReason = choice.finish_reason;
   };
