@@ -7,7 +7,12 @@ it('自定义 API 地址去除尾部斜线，保留请求模型与核对过滤',
   vi.stubGlobal('fetch', fetcher);
   await complete({ ...settings, baseUrl: 'https://example.com/v1///' }, '核对', '{}');
   expect(fetcher.mock.calls[0][0]).toBe('https://example.com/v1/chat/completions');
-  expect(JSON.parse(fetcher.mock.calls[0][1].body).model).toBe(settings.model);
+  expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({
+    model: settings.model,
+    messages: [{ role: 'system', content: '核对' }, { role: 'user', content: '{}' }],
+  });
+  expect(JSON.parse(fetcher.mock.calls[0][1].body)).not.toHaveProperty('stream');
+  expect(JSON.parse(fetcher.mock.calls[0][1].body)).not.toHaveProperty('max_tokens');
 });
 it.each([401, 429, 'missing', 'network'])('自定义接口错误不包含供应商名称 %s', async (failure) => {
   vi.stubGlobal('fetch', failure === 'network'

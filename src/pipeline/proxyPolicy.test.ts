@@ -65,7 +65,22 @@ it('owner 请求保留上游状态及正文且不跟随重定向', async () => {
 it('owner 聊天请求以 JSON POST 转发', async () => {
   const { handler, fetcher } = setup();
   await handler(request('user-token', { ...body, path: 'chat/completions', payload: { model: 'test' } }));
-  expect(fetcher.mock.calls[0][1]).toMatchObject({ method: 'POST', body: '{"model":"test"}' });
+  expect(fetcher.mock.calls[0][1]).toMatchObject({ method: 'POST', body: '{"model":"test","stream":true}' });
+});
+it('聊天强制 stream:true 并原样传递 SSE 流及状态，不缓冲正文', async () => {
+  const { handler, fetcher } = setup();
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  const stream = new ReadableStream<Uint8Array>({ start(value) { controller = value; } });
+  const upstream = new Response(stream, { status: 201, headers: { 'Content-Type': 'text/event-stream' } });
+  fetcher.mockResolvedValue(upstream);
+  const response = await handler(request('user-token', { ...body, path: 'chat/completions', payload: { model: 'test', stream: false } }));
+  expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({ model: 'test', stream: true });
+  expect(response.status).toBe(201);
+  expect(response.headers.get('content-type')).toBe('text/event-stream');
+  expect(response.body).toBe(upstream.body);
+  controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+  controller.close();
+  expect(await response.text()).toBe('data: [DONE]\n\n');
 });
 it('禁止来源和非法目标均不转发', async () => {
   const { handler, fetcher } = setup();

@@ -35,7 +35,7 @@ export function createProxyHandler(deps: Dependencies) {
       const upstream = await deps.fetch(target.url, {
         method: target.input.path === 'models' ? 'GET' : 'POST',
         headers: { Authorization: `Bearer ${target.input.key}`, 'Content-Type': 'application/json' },
-        ...(target.input.path === 'chat/completions' ? { body: JSON.stringify(target.input.payload) } : {}),
+        ...(target.input.path === 'chat/completions' ? { body: JSON.stringify({ ...target.input.payload, stream: true }) } : {}),
         redirect: 'manual',
       });
       cors.set('Content-Type', upstream.headers.get('content-type') || 'application/json');
