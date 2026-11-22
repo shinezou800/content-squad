@@ -23,6 +23,12 @@ describe('确定性核对', () => {
     '2026-11-22T01:20:06+08:00',
     '2026-11-20 16:14:47',
     '20261120161430',
+    '2026-11-22T02:02:16~17Z',
+    '2026年11月20日16:14',
+    '2026年11月20日16:14:47',
+    '2026年11月20日',
+    '2026-11-22 02:04 UTC',
+    '2026-11-22 02:04',
   ];
   it.each(timestamps)('正文时间戳不拆成数字片段：%s', (timestamp) => {
     expect(checkNumbers(`行情时间：${timestamp}。`, [])).toEqual([]);
@@ -58,6 +64,124 @@ describe('确定性核对', () => {
       '06',
     ]);
     expect(checkNumbers('2026年3季报', []).map((flag) => flag.原文)).toEqual(['2026', '3']);
+  });
+  it.each(timestamps)('快照和正文完整剔除时间但保留相邻价格、收益率：%s', (timestamp) => {
+    const data: Snapshot = [
+      {
+        code: '601398',
+        name: '工商银行',
+        fields: [
+          {
+            label: '行情',
+            value: `${timestamp}；现价9.40元，股息率4.5403%`,
+            source: '腾讯',
+            fetchedAt: '',
+          },
+        ],
+      },
+    ];
+    expect(checkNumbers(`${timestamp}；现价9.40元，股息率4.54%`, data)).toEqual([]);
+    expect(checkNumbers(`${timestamp}；现价9.50元`, data).map((flag) => flag.原文)).toEqual([
+      '9.50',
+    ]);
+    expect(checkNumbers('11、22、16、14、02、17', data).map((flag) => flag.原文)).toEqual([
+      '11',
+      '22',
+      '16',
+      '14',
+      '02',
+      '17',
+    ]);
+  });
+  it.each([
+    ['33,502.19亿元', 33502.19],
+    ['6,959.47亿元', 6959.47],
+    ['1,874.82亿元', 1874.82],
+    ['1,234,567.89亿元', 1234567.89],
+  ])('千位逗号金额整体比较及报错：%s', (text, value) => {
+    const data: Snapshot = [
+      {
+        code: '601398',
+        name: '工商银行',
+        fields: [{ label: '收入', value, unit: '亿元', source: '测试', fetchedAt: '' }],
+      },
+    ];
+    expect(checkNumbers(text, data)).toEqual([]);
+    expect(checkDraft(wrap(text), data)).toEqual([]);
+    expect(checkNumbers(text, []).map((flag) => flag.原文)).toEqual([text.replace(/元$/, '')]);
+    const stringData: Snapshot = [{ ...data[0], fields: [{ ...data[0].fields[0], value: text }] }];
+    expect(checkNumbers(`${value}亿元`, stringData)).toEqual([]);
+  });
+  it.each(['33,50亿元', '6,9594亿元', '1,87亿元'])('非三位分组逗号不合并成数字：%s', (text) => {
+    const value = Number(text.replaceAll(',', '').replace('亿元', ''));
+    const data: Snapshot = [
+      {
+        code: '601398',
+        name: '工商银行',
+        fields: [{ label: '收入', value, unit: '亿元', source: '测试', fetchedAt: '' }],
+      },
+    ];
+    expect(checkNumbers(text, data)).toHaveLength(2);
+  });
+  it.each([
+    '中位数约 4.96%',
+    'PB 中位数 0.44 倍',
+    'ROE 中位数 5.59%',
+    '平均 4.96%',
+    '均值约4.96%',
+    '最高 4.96%',
+    '最低 4.96%',
+    '区间6–7倍',
+    '区间 6 倍 – 7 倍',
+    '区间 -1.5%～-0.5%',
+  ])('派生数值及区间端点不作直接引用检查：%s', (text) => {
+    expect(checkNumbers(text, [])).toEqual([]);
+    expect(checkDraft(wrap(text), [])).toEqual([]);
+  });
+  it.each([
+    '中位数，现价9.50元',
+    '平均。现价9.50元',
+    '区间\n现价9.50元',
+    '最高！？现价9.50元',
+    '最低；现价9.50元',
+    '均值、现价9.50元',
+    '中位数只是说明文字而非当前价格9.50元',
+    '直接引用9.50元',
+    '9.50元为中位数',
+  ])('派生词不跨分句、长距离或向前豁免直接引用：%s', (text) => {
+    expect(checkNumbers(text, []).map((flag) => flag.原文)).toEqual(['9.50']);
+  });
+  it('约本身不豁免直接引用，正确舍入匹配而错误股息率及价格仍标记', () => {
+    const data: Snapshot = [
+      {
+        code: '601398',
+        name: '工商银行',
+        fields: [
+          { label: '股息率', value: 4.5403, unit: '%', source: '测试', fetchedAt: '' },
+          { label: '现价', value: 9.4, unit: '元', source: '测试', fetchedAt: '' },
+        ],
+      },
+    ];
+    expect(checkNumbers('股息率约4.54%', data)).toEqual([]);
+    expect(checkDraft(wrap('股息率约4.54%'), data)).toEqual([]);
+    const wrong: Snapshot = [
+      { ...data[0], fields: [{ ...data[0].fields[0], value: 3.9 }, data[0].fields[1]] },
+    ];
+    expect(checkNumbers('股息率约4.54%', wrong).map((flag) => flag.原文)).toEqual(['4.54']);
+    expect(checkDraft(wrap('股息率约4.54%'), wrong)).toHaveLength(1);
+    expect(checkNumbers('中位数约4.96%，现价9.50元', data).map((flag) => flag.原文)).toEqual([
+      '9.50',
+    ]);
+  });
+  it('派生词过滤仅用于正文，快照字符串仍可为直接引用提供事实', () => {
+    const data: Snapshot = [
+      {
+        code: '601398',
+        name: '工商银行',
+        fields: [{ label: '统计', value: 'PB 中位数 0.44 倍', source: '测试', fetchedAt: '' }],
+      },
+    ];
+    expect(checkNumbers('PB 为0.44倍', data)).toEqual([]);
   });
   it.each([
     ['4.54%', 4.540295119182747, '%', '4.55%'],
