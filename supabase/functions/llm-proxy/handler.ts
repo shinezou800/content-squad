@@ -55,7 +55,7 @@ export function createProxyHandler(deps: Dependencies) {
     const cors = new Headers({
       'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Expose-Headers': 'content-type, x-llm-proxy-error',
+      'Access-Control-Expose-Headers': 'content-type, x-llm-proxy-error, retry-after',
       'Vary': 'Origin',
       'Cache-Control': 'no-store',
     });
@@ -91,6 +91,8 @@ export function createProxyHandler(deps: Dependencies) {
       return fail(502, `Upstream unavailable: ${detail}`.slice(0, 200));
     }
     if (!upstream.ok) cors.set('X-LLM-Proxy-Error', 'upstream-http');
+    const retryAfter = upstream.headers.get('retry-after');
+    if (retryAfter) cors.set('Retry-After', retryAfter);
     cors.set('Content-Type', upstream.headers.get('content-type') || 'application/json');
     const body = upstream.ok && upstream.body && target.input.path === 'chat/completions'
       ? heartbeat(upstream.body, deps.heartbeatMs ?? 10_000) : upstream.body;

@@ -45,7 +45,7 @@ it('未登录不发送请求', async () => {
   await expect(fetchModels({ ...defaultSettings, useProxy: true }, defaultSettings)).rejects.toThrow('云端转发需要先登录');
   expect(fetcher).not.toHaveBeenCalled();
 });
-it.each([[401, '密钥无效'], [429, '请求频繁'], [502, '502']])('代理上游错误映射 %s', async (status, error) => {
+it.each([[401, '密钥无效'], [429, '限流'], [502, '502']])('代理上游错误映射 %s', async (status, error) => {
   vi.stubGlobal('fetch', vi.fn().mockImplementation(() => new Response(null, { status })));
-  await expect(complete({ ...defaultSettings, useProxy: true, key: 'test-only' }, '', '')).rejects.toThrow(error);
+  await expect(complete({ ...defaultSettings, useProxy: true, key: 'test-only' }, '', '', { sleep: async () => {} })).rejects.toThrow(error);
 });

@@ -78,7 +78,7 @@ it('聊天强制 stream:true 并原样传递 SSE 流及状态，不缓冲正文'
   expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({ model: 'test', stream: true });
   expect(response.status).toBe(201);
   expect(response.headers.get('content-type')).toBe('text/event-stream');
-  expect(response.headers.get('access-control-expose-headers')).toBe('content-type, x-llm-proxy-error');
+  expect(response.headers.get('access-control-expose-headers')).toBe('content-type, x-llm-proxy-error, retry-after');
   controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
   controller.close();
   expect(await response.text()).toBe('data: [DONE]\n\n');
@@ -99,6 +99,13 @@ it('上游 HTTP 502 透传原始状态、类型和错误正文', async () => {
   expect(response.headers.get('access-control-expose-headers')).toContain('x-llm-proxy-error');
   expect(response.headers.get('content-type')).toBe('application/problem+json');
   expect(await response.text()).toBe(errorBody);
+});
+it('429 透传 Retry-After 并允许浏览器读取', async () => {
+  const { handler, fetcher } = setup();
+  fetcher.mockResolvedValue(Response.json({ error: 'rate limit' }, { status: 429, headers: { 'Retry-After': '15' } }));
+  const response = await handler(request());
+  expect(response.headers.get('retry-after')).toBe('15');
+  expect(response.headers.get('access-control-expose-headers')).toContain('retry-after');
 });
 it('上游网络失败提供异常名称和消息，不暴露请求密钥', async () => {
   const { handler, fetcher } = setup();

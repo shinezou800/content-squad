@@ -42,11 +42,21 @@ it('未填密钥时不发请求', async () => {
 });
 it.each([
   [401, '密钥无效'],
-  [429, '请求频繁或额度已用尽'],
+  [429, '模型接口限流'],
   [500, '模型请求失败'],
 ])('中文错误 %s', async (status, message) => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status, ok: false }));
   await expect(complete(settings, '', '')).rejects.toThrow(message);
+});
+it.each([['Too many requests', '限流'], ['insufficient quota', '额度用尽']])('直连 429 按上游消息区分原因且不重试：%s', async (message, cause) => {
+  const fetcher = vi.fn().mockResolvedValue(Response.json({ error: { message } }, { status: 429 }));
+  vi.stubGlobal('fetch', fetcher);
+  const error = await complete(settings, '', '').catch((error: Error) => error);
+  if (!(error instanceof Error)) throw new Error('预期请求失败');
+  expect(error.message).toContain(cause);
+  expect(error.message).toContain(message);
+  if (cause === '限流') expect(error.message).not.toContain('额度');
+  expect(fetcher).toHaveBeenCalledTimes(1);
 });
 it('处理正常和空模型输出', async () => {
   vi.stubGlobal(

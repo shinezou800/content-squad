@@ -27,14 +27,15 @@ export async function providerRequest(settings: Settings, path: 'models' | 'chat
     });
 }
 
-export function checkProviderStatus(response: Response): void {
+export async function checkProviderStatus(response: Response, key = ''): Promise<void> {
   if (response.status === 401) throw new Error('API 密钥无效或已过期，请在设置中检查。');
-  if (response.status === 429) throw new Error('请求频繁或额度已用尽，请稍后重试或更换模型。');
+  if (response.status === 429) throw await rateLimitError(response, key);
   if (!response.ok) throw new Error(`模型请求失败（${response.status}），请稍后重试。`);
 }
 
-export async function proxyStatusError(response: Response, key: string): Promise<Error> {
-  const body = (await response.text().catch(() => '')).trim();
+async function responseDetail(response: Response, key: string): Promise<string> {
+  let body = '';
+  try { body = (await response.text()).trim(); } catch { /* No readable error body. */ }
   let detail = body;
   try {
     const json = JSON.parse(body);
@@ -44,5 +45,16 @@ export async function proxyStatusError(response: Response, key: string): Promise
     if (body.startsWith('<')) detail = '';
   }
   if (key.trim()) detail = detail.split(key.trim()).join('[已隐藏]');
+  return detail.slice(0, 500);
+}
+
+export async function rateLimitError(response: Response, key: string): Promise<Error> {
+  const detail = await responseDetail(response, key);
+  const cause = /quota|insufficient|balance|额度|余额/i.test(detail) ? '模型接口额度用尽' : '模型接口限流';
+  return new Error(`${cause}（429）：${detail || '请求频繁'}，请稍后重试`);
+}
+
+export async function proxyStatusError(response: Response, key: string): Promise<Error> {
+  const detail = await responseDetail(response, key);
   return new Error(`模型请求失败（${response.status}），${detail ? detail.slice(0, 500) : '请稍后重试。'}`);
 }

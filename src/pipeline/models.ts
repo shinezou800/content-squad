@@ -8,7 +8,7 @@ export async function fetchModels(settings: Settings, saved: Settings): Promise<
   const sendKey = settings.key.trim() &&
     (baseUrl === normalizeBaseUrl(saved.baseUrl) || settings.key !== saved.key);
   const response = await providerRequest(settings, 'models', sendKey ? settings.key : '');
-  checkProviderStatus(response);
+  await checkProviderStatus(response, sendKey ? settings.key : '');
   const json = await response.json();
   return json.data
     .map((model: { id: string }) => model.id)
