@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { complete } from './llm';
-const settings = { baseUrl: 'https://example.com/v1', key: 'test-only', model: 'free', pool: '' };
+const settings = { useProxy: false, baseUrl: 'https://example.com/v1', key: 'test-only', model: 'free', pool: '' };
 afterEach(() => vi.unstubAllGlobals());
 it('自定义 API 地址去除尾部斜线，保留请求模型与核对过滤', async () => {
   const fetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ choices: [{ message: { content: '[]' } }] }) });

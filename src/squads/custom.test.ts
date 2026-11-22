@@ -47,6 +47,7 @@ const line = {
 };
 const mid = { id: 'custom-mid-100', name: '白酒联合记录', squads: [line.id, 'zangu-shouxi'] };
 const settings = {
+  useProxy: false,
   baseUrl: 'https://example.com/v1',
   key: 'mock',
   model: 'mock',

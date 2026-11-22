@@ -12,7 +12,7 @@ afterEach(() => vi.clearAllMocks());
 it.each(['bank-big4', 'bank-joint', 'bank-city'])('银行三角色提示词字节不变：%s', async (id) => {
   const ctx: Context = {
     topic: '记录',
-    settings: { baseUrl: 'https://example.com/v1', key: '', model: 'mock', pool: '601398 工商银行 持仓' },
+    settings: { useProxy: false, baseUrl: 'https://example.com/v1', key: '', model: 'mock', pool: '601398 工商银行 持仓' },
     snapshot: [],
     outputs: { data: '简报', draft: '正文' },
   };

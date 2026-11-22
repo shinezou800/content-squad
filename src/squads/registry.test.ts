@@ -30,7 +30,7 @@ it('主人提供的港元TTM金额及推算股息率进入小稿和小核快照�
   const run = await runPipeline(
     registry['zangu-shouxi'],
     '记录分红',
-    { baseUrl: 'https://example.com/v1', key: 'test', model: 'test', pool: '00883 中海油 观察池 分红TTM=1.49港元' },
+    { useProxy: false, baseUrl: 'https://example.com/v1', key: 'test', model: 'test', pool: '00883 中海油 观察池 分红TTM=1.49港元' },
     () => {},
   );
   expect(run.steps.every((step) => step.status === 'done')).toBe(true);
@@ -63,6 +63,7 @@ it('已保存的自定义池完整传入流水线及真实解析器，只请求�
     },
   });
   saveSettings({
+    useProxy: false,
     baseUrl: 'https://example.com/v1',
     key: 'test-key',
     model: 'test-model',
