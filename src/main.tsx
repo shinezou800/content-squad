@@ -2,6 +2,9 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { loadSettings, saveSettings, type Settings } from './settings';
 import { registry } from './squads/registry';
+import { midRegistry } from './squads/mid';
+import { isCheckStep, pipelineCards, squadName, stepPresentation } from './squads/presentation';
+import { runMidPipeline } from './pipeline/midRunner';
 import { LocalStorageRuns, SupabaseRuns, type Run } from './storage';
 import { supabase } from './storage/supabase';
 import type { User } from '@supabase/supabase-js';
@@ -24,6 +27,7 @@ function App() {
   const [page, setPage] = useState<'work' | 'settings' | 'history'>('work');
   const [settings, setSettings] = useState(loadSettings);
   const [topic, setTopic] = useState('');
+  const [selectedSquad, setSelectedSquad] = useState('zangu-shouxi');
   const [run, setRun] = useState<Run>();
   const [history, setHistory] = useState<Run[]>([]);
   const [busy, setBusy] = useState(false);
@@ -116,9 +120,13 @@ function App() {
     setBusy(true);
     setMessage('');
     try {
-      const next = await runPipeline(squad, topic.trim(), runSettings, (progress) => {
+      const emit = (progress: Run) => {
         if (activeStorage.current === storage) setRun(progress);
-      });
+      };
+      const next =
+        selectedSquad === 'mid-zangu-ai'
+          ? await runMidPipeline(midRegistry['mid-zangu-ai'], topic.trim(), runSettings, emit)
+          : await runPipeline(squad, topic.trim(), runSettings, emit);
       if (activeStorage.current !== storage) {
         setMessage('账号状态已变化，本次运行未保存，请在当前账号重新运行。');
         return;
@@ -223,10 +231,25 @@ function App() {
                 扎实的记录开始。
               </h1>
               <p>{squad.description}</p>
-              <span className="tag">攒股收息内容线</span>
+              <span className="tag">{squadName(run?.squadId ?? selectedSquad)}</span>
               <span className="tag muted">固定顺序 · 单次协作</span>
             </section>
             <section className="panel topic-panel">
+              <label htmlFor="squad-choice" className="squad-label">
+                选择内容线
+              </label>
+              <select
+                id="squad-choice"
+                disabled={busy}
+                value={selectedSquad}
+                onChange={(e) => {
+                  setSelectedSquad(e.target.value);
+                  setRun(undefined);
+                }}
+              >
+                <option value="zangu-shouxi">小团：攒股收息内容线</option>
+                <option value="mid-zangu-ai">中团：攒股收息 × AI手记</option>
+              </select>
               <div className="section-heading">
                 <h2>
                   <span className="section-number">01</span> 交给小团一个选题
@@ -248,7 +271,9 @@ function App() {
                 <span className="subtle">只记录，不荐股。每个数字都要有出处。</span>
                 <button className="primary" disabled={busy || !authReady} onClick={start}>
                   {busy
-                    ? '小团正在协作…'
+                    ? selectedSquad === 'mid-zangu-ai'
+                      ? '中团正在协作…'
+                      : '小团正在协作…'
                     : run?.steps.some((s) => s.status === 'failed')
                       ? '重新运行整条内容线 ↗'
                       : '开始本次创作 ↗'}
@@ -258,15 +283,13 @@ function App() {
             <section className="pipeline-section">
               <div className="section-heading">
                 <h2>
-                  <span className="section-number">02</span> 小团协作线
+                  <span className="section-number">02</span>{' '}
+                  {(run?.squadId ?? selectedSquad) === 'mid-zangu-ai' ? '中团协作线' : '小团协作线'}
                 </h2>
                 <span className="subtle">依次推进，不跳步</span>
               </div>
               <div className="pipeline">
-                {[
-                  ...squad.roles.map((r) => ({ ...r, title: r.title })),
-                  { id: 'final', name: '成稿', title: '由你拍板' },
-                ].map((role, i) => {
+                {pipelineCards(run?.squadId ?? selectedSquad, run?.steps).map((role) => {
                   const step = run?.steps.find((s) => s.roleId === role.id);
                   const final = role.id === 'final';
                   const ready = hasReachedFinalStep(run);
@@ -275,22 +298,13 @@ function App() {
                       key={role.id}
                       className={`role-card ${step?.status === 'running' ? 'running' : ''}`}
                     >
-                      <div className={'avatar avatar-' + i}>{['数', '稿', '核', '定'][i]}</div>
+                      <div className={'avatar avatar-' + role.avatarIndex}>{role.avatar}</div>
                       <div className="role-body">
                         <h3>
                           {role.name}
                           <span>{role.title}</span>
                         </h3>
-                        <p>
-                          {
-                            [
-                              '行情与财报 · 提炼事实',
-                              '遵循规则 · 写下记录',
-                              '数字核验 · 标出疑点',
-                              '固定模板 · 人工定稿',
-                            ][i]
-                          }
-                        </p>
+                        <p>{role.description}</p>
                         <span className={`status ${step?.status || ''}`}>
                           {final
                             ? ready
@@ -380,11 +394,9 @@ function App() {
                 {run.steps
                   .filter((s) => s.output)
                   .map((step) => (
-                    <details className="panel" key={step.roleId} open={step.roleId === 'check'}>
-                      <summary>
-                        {squad.roles.find((r) => r.id === step.roleId)?.name} · 工作记录
-                      </summary>
-                      <pre className={step.roleId === 'check' ? 'review' : ''}>{step.output}</pre>
+                    <details className="panel" key={step.roleId} open={isCheckStep(step.roleId)}>
+                      <summary>{stepPresentation(step.roleId).name} · 工作记录</summary>
+                      <pre className={isCheckStep(step.roleId) ? 'review' : ''}>{step.output}</pre>
                     </details>
                   ))}
                 {hasReachedFinalStep(run) && (
@@ -576,6 +588,9 @@ function App() {
                   onClick={() => {
                     setRun(item);
                     setTopic(item.topic);
+                    setSelectedSquad(
+                      item.squadId === 'mid-zangu-ai' ? 'mid-zangu-ai' : 'zangu-shouxi',
+                    );
                     setPage('work');
                   }}
                 >
@@ -588,7 +603,7 @@ function App() {
                   </span>
                   <h2>{item.topic}</h2>
                   <p className="subtle">
-                    {new Date(item.createdAt).toLocaleString('zh-CN')} · 攒股收息内容线 →
+                    {new Date(item.createdAt).toLocaleString('zh-CN')} · {squadName(item.squadId)} →
                   </p>
                 </button>
               ))
