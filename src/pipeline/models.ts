@@ -1,4 +1,5 @@
 import { defaultBaseUrl, normalizeBaseUrl, type Settings } from '../settings';
+import { providerRequest, checkProviderStatus } from './providerRequest';
 
 export async function fetchModels(settings: Settings, saved: Settings): Promise<string[]> {
   const baseUrl = normalizeBaseUrl(settings.baseUrl);
@@ -6,10 +7,8 @@ export async function fetchModels(settings: Settings, saved: Settings): Promise<
   const isDefault = url.origin + url.pathname.replace(/\/+$/, '') === defaultBaseUrl;
   const sendKey = settings.key.trim() &&
     (baseUrl === normalizeBaseUrl(saved.baseUrl) || settings.key !== saved.key);
-  const response = await fetch(`${baseUrl}/models`, {
-    headers: sendKey ? { Authorization: `Bearer ${settings.key}` } : {},
-  });
-  if (!response.ok) throw new Error('模型列表加载失败');
+  const response = await providerRequest(settings, 'models', sendKey ? settings.key : '');
+  checkProviderStatus(response);
   const json = await response.json();
   return json.data
     .map((model: { id: string }) => model.id)

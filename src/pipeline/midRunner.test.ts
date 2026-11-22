@@ -10,6 +10,7 @@ import type { Run } from '../storage';
 
 vi.mock('./llm', () => ({ complete: vi.fn() }));
 const settings = {
+  useProxy: false,
   baseUrl: 'https://example.com/v1',
   key: 'private-key',
   model: 'test-model',

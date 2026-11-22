@@ -171,8 +171,8 @@ function App() {
       if (!list.length) throw new Error();
       setModels(list);
       setMessage(`已载入 ${list.length} 个模型。`);
-    } catch {
-      setMessage('模型列表加载失败，可直接填写模型名称。');
+    } catch (error) {
+      setMessage(error instanceof Error && error.message ? error.message : '模型列表加载失败，可直接填写模型名称。');
     } finally {
       setLoadingModels(false);
     }
@@ -546,6 +546,16 @@ function App() {
               }}
             >
               <h2>模型连接</h2>
+              <label>
+                <input
+                  type="checkbox"
+                  style={{ width: 'auto' }}
+                  checked={settings.useProxy}
+                  onChange={(e) => setSettings({ ...settings, useProxy: e.target.checked })}
+                />
+                经云端转发（接口不允许浏览器直连时勾选）
+              </label>
+              <p className="subtle">需要先登录；密钥随每次请求转发，不在云端存储。</p>
               <label htmlFor="base-url">API 地址</label>
               <input
                 id="base-url"

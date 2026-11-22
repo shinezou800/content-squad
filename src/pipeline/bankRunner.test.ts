@@ -14,6 +14,7 @@ const codes = [
 ];
 const titles = ['四大行', '股份制银行', '城商银行'];
 const settings = {
+  useProxy: false,
   baseUrl: 'https://example.com/v1',
   key: 'test-key',
   model: 'mock',

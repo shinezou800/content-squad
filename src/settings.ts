@@ -1,8 +1,9 @@
 import { defaults, legacyDefaultPool, previousDefaultPool, poolCodes } from './data/market';
 export const defaultBaseUrl = 'https://openrouter.ai/api/v1';
-export type Settings = { key: string; model: string; pool: string; baseUrl: string };
+export type Settings = { key: string; model: string; pool: string; baseUrl: string; useProxy: boolean };
 export const defaultSettings: Settings = {
   key: '',
+  useProxy: false,
   baseUrl: defaultBaseUrl,
   model: 'google/gemma-4-31b-it:free',
   pool: defaults,

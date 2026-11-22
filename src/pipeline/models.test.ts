@@ -18,7 +18,7 @@ it('空模型列表正常返回，失败请求抛出错误', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [] }) }));
   expect(await fetchModels(defaultSettings, defaultSettings)).toEqual([]);
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }));
-  await expect(fetchModels(defaultSettings, defaultSettings)).rejects.toThrow('模型列表加载失败');
+  await expect(fetchModels(defaultSettings, defaultSettings)).rejects.toThrow('模型请求失败');
 });
 it.each([
   ['https://example.com/v1', 'saved-key', {}],
