@@ -9,6 +9,8 @@ function stripTimestamps(text: string): string {
       ' ',
     )
     .replace(/(?<!\d)\d{4}年\d{1,2}月\d{1,2}日(?:\s*\d{1,2}:\d{2}(?::\d{2})?)?(?!\d)/g, ' ')
+    .replace(/(?<!\d)(?:\d{4}\s*年\s*)?\d{1,2}\s*月\s*\d{1,2}\s*日/g, ' ')
+    .replace(/(?<!\d)\d{4}\s*年(?!\s*\d+\s*季报)|(?<!\d)\d{1,2}\s*[月日]|(?<!\d)\d{1,2}\s*[时点]\s*(?:\d{1,2}\s*分)?(?:\d{1,2}\s*秒)?/g, ' ')
     .replace(
       /(?<!\d)(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])(?:[01]\d|2[0-3])[0-5]\d[0-5]\d(?:[~～-](?:\d{6}|\d{4}|\d{2}))?(?!\d)/g,
       ' ',
@@ -144,13 +146,51 @@ export function checkDraft(draft: string, snapshot: Snapshot): Flag[] {
     }
     add(m[0], '发现可能指向读者的用词，请人工复核');
   }
-  if (!/^\s*⚠️/.test(draft) || !draft.slice(0, 100).includes('模拟盘记录'))
+  if (!/⚠\uFE0F?[\s\S]*?模拟盘记录/.test(draft))
     add(draft.slice(0, 100), '开篇需有 ⚠️ 前置声明及模拟盘记录');
-  const closing = draft.slice(-400);
-  if (!/持仓披露[：:]/.test(closing)) add('', '结尾缺少持仓披露');
-  if (!/非投资建议/.test(closing) || !/数据来源[：:]/.test(closing))
+  const closing = draft;
+  if (!/持仓披露\s*[：:]/.test(closing)) add('', '结尾缺少持仓披露');
+  if (!/非投资建议/.test(closing) || !/数据来源\s*[：:]/.test(closing))
     add('', '结尾缺少非投资建议及数据来源披露');
   return [...flags, ...checkNumbers(draft, snapshot)];
+}
+
+function derivedNumbers(context: string, snapshot: Snapshot) {
+  const payout = /派息覆盖|分红覆盖|派息率|支付率/.test(context);
+  const operation = /合计|总计|之和|相加|加总|[+＋]/.test(context)
+    ? 'sum'
+    : /差额|之差|相减|差值|减去|[−－]/.test(context)
+      ? 'difference'
+      : /乘以|乘积|相乘|×|\d\s*\*\s*[+-]?\d/.test(context)
+        ? 'product'
+        : /派息覆盖|分红覆盖|覆盖率|派息率|支付率|比率|比值|比例|股息率|收益率|[÷/]/.test(context)
+          ? 'ratio'
+          : undefined;
+  if (!operation) return [];
+  const results: { value: number; currency?: string; ratio?: boolean }[] = [];
+  for (const stock of snapshot) {
+    const fields = stock.fields.flatMap((field) => {
+      const parsed = typeof field.value === 'number' ? undefined : singleModelNumber(field.value);
+      const value = typeof field.value === 'number' ? field.value : parsed && !parsed.context ? parsed.raw : undefined;
+      if (value === undefined || !Number.isFinite(value) || /日期|时间|报告期|代码|年份/.test(field.label)) return [];
+      return [{ label: field.label, value: value * (parsed && parsed.kind !== 'bare' ? parsed.scale : unitScale(field.unit)), currency: parsed?.currency ?? currencyOf(field.unit) }];
+    });
+    for (let i = 0; i < fields.length; i++) {
+      for (let j = 0; j < fields.length; j++) {
+        if (i === j) continue;
+        const a = fields[i], b = fields[j];
+        if (a.currency && b.currency && a.currency !== b.currency) continue;
+        if (operation === 'ratio') {
+          if (payout && !/分红|派息|股息/.test(a.label)) continue;
+          if (b.value !== 0) results.push({ value: a.value / b.value, currency: 'non-monetary', ratio: true });
+        } else {
+          const value = operation === 'sum' ? a.value + b.value : operation === 'difference' ? a.value - b.value : a.value * b.value;
+          results.push({ value, currency: a.currency ?? b.currency });
+        }
+      }
+    }
+  }
+  return results;
 }
 
 export function checkNumbers(draft: string, snapshot: Snapshot): Flag[] {
@@ -189,7 +229,14 @@ export function checkNumbers(draft: string, snapshot: Snapshot): Flag[] {
     const scale = unitScale(m[2]);
     const digits = Math.min(m[1].split('.')[1]?.length || 0, 2);
     const currency = currencyOf(m[3]);
+    const context = m.input.slice(0, m.index).split(/[，。！？；\n]/).at(-1)!.slice(-40);
+    const percent = /^\s*[%％]/.test(m.input.slice(m.index + m[0].length));
+    const derived = derivedNumbers(context, snapshot).some((v) =>
+      (!currency || !v.currency || currency === v.currency) &&
+      withinNumberTolerance(raw, v.value * (percent && v.ratio ? 100 : 1), digits, scale),
+    );
     if (
+      !derived &&
       !values.some(
         (v) => {
           return (
