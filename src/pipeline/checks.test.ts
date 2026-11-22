@@ -105,6 +105,15 @@ describe('确定性核对', () => {
     expect(checkDraft(wrap(text), data)).toEqual([]);
     expect(checkNumbers(wrong, data)).toHaveLength(1);
   });
+  it('大额数值的浮点误差容许量不能掩盖百元差异', () => {
+    const data: Snapshot = [{
+      code: '601398', name: '工商银行',
+      fields: [{ label: '营业收入', value: 296031000000, unit: '元', source: '测试', fetchedAt: '' }],
+    }];
+    expect(checkNumbers('296031000000元', data)).toEqual([]);
+    expect(checkNumbers('296031000100元', data)).toHaveLength(1);
+    expect(checkDraft(wrap('296031000100元'), data)).toHaveLength(1);
+  });
   it.each([
     '未做任何补全或推算',
     '未补仓',

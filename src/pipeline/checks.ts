@@ -114,7 +114,7 @@ export function checkNumbers(draft: string, snapshot: Snapshot): Flag[] {
       !values.some(
         (v) => {
           const value = v.value / scale;
-          const epsilon = 1e-9 * Math.max(1, Math.abs(value), Math.abs(raw));
+          const epsilon = 4 * Number.EPSILON * Math.max(1, Math.abs(value), Math.abs(raw));
           return (
             (!currency || !v.currency || currency === v.currency) &&
             Math.abs(value - raw) <= 0.5 / precision + epsilon
