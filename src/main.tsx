@@ -123,10 +123,9 @@ function App() {
       const emit = (progress: Run) => {
         if (activeStorage.current === storage) setRun(progress);
       };
-      const next =
-        selectedSquad === 'mid-zangu-ai'
-          ? await runMidPipeline(midRegistry['mid-zangu-ai'], topic.trim(), runSettings, emit)
-          : await runPipeline(squad, topic.trim(), runSettings, emit);
+      const next = Object.hasOwn(midRegistry, selectedSquad)
+        ? await runMidPipeline(midRegistry[selectedSquad], topic.trim(), runSettings, emit)
+        : await runPipeline(squad, topic.trim(), runSettings, emit);
       if (activeStorage.current !== storage) {
         setMessage('账号状态已变化，本次运行未保存，请在当前账号重新运行。');
         return;
@@ -248,7 +247,11 @@ function App() {
                 }}
               >
                 <option value="zangu-shouxi">小团：攒股收息内容线</option>
-                <option value="mid-zangu-ai">中团：攒股收息 × AI手记</option>
+                {Object.values(midRegistry).map((mid) => (
+                  <option key={mid.id} value={mid.id}>
+                    中团：{mid.name}
+                  </option>
+                ))}
               </select>
               <div className="section-heading">
                 <h2>
@@ -271,7 +274,7 @@ function App() {
                 <span className="subtle">只记录，不荐股。每个数字都要有出处。</span>
                 <button className="primary" disabled={busy || !authReady} onClick={start}>
                   {busy
-                    ? selectedSquad === 'mid-zangu-ai'
+                    ? Object.hasOwn(midRegistry, selectedSquad)
                       ? '中团正在协作…'
                       : '小团正在协作…'
                     : run?.steps.some((s) => s.status === 'failed')
@@ -284,7 +287,9 @@ function App() {
               <div className="section-heading">
                 <h2>
                   <span className="section-number">02</span>{' '}
-                  {(run?.squadId ?? selectedSquad) === 'mid-zangu-ai' ? '中团协作线' : '小团协作线'}
+                  {Object.hasOwn(midRegistry, run?.squadId ?? selectedSquad)
+                    ? '中团协作线'
+                    : '小团协作线'}
                 </h2>
                 <span className="subtle">依次推进，不跳步</span>
               </div>
@@ -589,7 +594,7 @@ function App() {
                     setRun(item);
                     setTopic(item.topic);
                     setSelectedSquad(
-                      item.squadId === 'mid-zangu-ai' ? 'mid-zangu-ai' : 'zangu-shouxi',
+                      Object.hasOwn(midRegistry, item.squadId) ? item.squadId : 'zangu-shouxi',
                     );
                     setPage('work');
                   }}

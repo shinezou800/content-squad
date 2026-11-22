@@ -20,6 +20,22 @@ const wrap = (text: string) =>
 const draftA = wrap('攒股记录，现价21.7港元。');
 const draftB = wrap('AI 实测手记，每股分红1.49港元。');
 const responses = ['数据简报甲', draftA, '[]', '数据简报乙', draftB, '[]', '[]'];
+it('golden: mid-zangu-ai finalText and step IDs stay byte-identical', async () => {
+  const run = await runMidPipeline(mid, '选题', settings, () => {});
+  expect(run.steps.map((step) => step.roleId)).toEqual([
+    'zangu-shouxi:data',
+    'zangu-shouxi:draft',
+    'zangu-shouxi:check',
+    'ai-shouji:data',
+    'ai-shouji:draft',
+    'ai-shouji:check',
+    'merge:check',
+  ]);
+  const review = '【规则核对】\n[]\n\n【模型事实核对】\n[]';
+  expect(run.finalText).toBe(
+    `${draftA}\n\n──────── AI手记 ────────\n\n${draftB}\n\n──────── 核对记录 · 发布前请逐项确认 ────────\n【攒股收息段】\n${review}\n\n【AI手记段】\n${review}\n\n【合并全文数字复核】\n${review}`,
+  );
+});
 beforeEach(() => {
   let call = 0;
   vi.mocked(complete).mockImplementation(async () => responses[call++]);
@@ -114,6 +130,15 @@ it('中团配置按顺序注册，角色生命周期完整，快照仅抓取一�
   expect(complete).toHaveBeenCalledTimes(7);
   expect(vi.mocked(complete).mock.calls.every((call) => call[0] === settings)).toBe(true);
   expect(JSON.stringify(run)).not.toContain('private-key');
+});
+
+it('任意中团标识均在新小团首步继承前团快照，AI手记复用而非重新抓取', async () => {
+  const run = await runMidPipeline({ ...mid, id: 'another-mid' }, '选题', settings, () => {});
+  expect(run.steps.every((step) => step.status === 'done')).toBe(true);
+  expect(JSON.parse(run.steps[3].input!).snapshot).toEqual(run.snapshot);
+  expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes('gtimg'))).toHaveLength(
+    1,
+  );
 });
 
 it('正文不改写且依次排列，独立核对及合并核对统一置于正文之后', async () => {

@@ -39,6 +39,23 @@ it('中团七步名称与顺序正确，历史步骤使用同一标签', () => {
   expect(squadName('mid-zangu-ai')).toBe('攒股收息 × AI手记');
   expect(squadName('zangu-shouxi')).toBe('攒股收息内容线');
 });
+it('银行中团卡片按配置生成十步及段标签，历史记录一致', () => {
+  const cards = pipelineCards('mid-bank');
+  expect(cards).toHaveLength(10);
+  expect(cards.map((card) => card.name)).toEqual([
+    ...['四大行', '股份制银行', '城商银行'].flatMap((title) =>
+      ['小数', '小稿', '小核'].map((role) => `${title} · ${role}`),
+    ),
+    '小核 · 合并复核',
+  ]);
+  expect(
+    pipelineCards(
+      'mid-bank',
+      cards.map((card) => ({ roleId: card.id })),
+    ),
+  ).toEqual(cards);
+  expect(squadName('mid-bank')).toBe('银行中团');
+});
 it.each(['check', 'zangu-shouxi:check', 'ai-shouji:check', 'merge:check', 'old:check'])(
   '所有核对步骤使用默认展开的复核样式：%s',
   (id) => expect(isCheckStep(id)).toBe(true),
