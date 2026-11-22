@@ -21,7 +21,7 @@ it('默认直接请求，不读取云端会话', async () => {
 });
 it('勾选代理后使用会话鉴权且模型核对过滤仍生效', async () => {
   const content = JSON.stringify([{ 原文: '7.00%', 数据源值: '6.9975%', 问题: '数值不符' }]);
-  const fetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ choices: [{ message: { content } }] }) });
+  const fetcher = vi.fn().mockResolvedValue(Response.json({ choices: [{ message: { content } }] }));
   vi.stubGlobal('fetch', fetcher);
   const settings = { ...defaultSettings, useProxy: true, key: 'upstream-test' };
   expect(await complete(settings, '', JSON.stringify({ draft: '7.00%', snapshot: [] }))).toBe('[]');

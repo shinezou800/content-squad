@@ -22,6 +22,37 @@ function sse(chunks: (string | Uint8Array)[], broken = false) {
   return new Response(body, { headers: { 'Content-Type': 'text/event-stream; charset=utf-8' } });
 }
 function success(text = '完成') { return sse([event(text, 'stop'), 'data: [DONE]\n\n']); }
+function withoutSseHeader(chunks: string[], broken = false, contentType?: string) {
+  return new Response(sse(chunks, broken).body, { headers: contentType ? { 'Content-Type': contentType } : {} });
+}
+it.each([undefined, 'application/json'])('无 SSE Content-Type 时嗅探 ping 和跨 chunk data：%s', async (contentType) => {
+  const response = withoutSseHeader(['\uFEFF  \n: pi', 'ng\n\nda', 'ta: {"choices":[{"delta":{"content":"正文"}}]}\n\n', 'data: [DONE]\n\n', event('不应读取')], false, contentType);
+  expect(await readSegment(response)).toEqual({ text: '正文', done: true });
+});
+it.each(['data:', 'event:', 'id:', 'retry:'])('跨 chunk 嗅探 SSE 字段 %s', async (field) => {
+  const prefix = field === 'data:' ? '' : `${field} test\n`;
+  const text = prefix + event('正文', 'stop');
+  expect(await readSegment(withoutSseHeader([...text]))).toMatchObject({ text: '正文', finishReason: 'stop' });
+});
+it('无 Content-Type 的 JSON 正文回退解析', async () => {
+  const json = JSON.stringify({ choices: [{ message: { content: 'JSON正文' }, finish_reason: 'stop' }] });
+  expect(await readSegment(withoutSseHeader(['\uFEFF \n', json.slice(0, 5), json.slice(5)]))).toEqual({ text: 'JSON正文', finishReason: 'stop', done: true });
+});
+it.each(['garbage', '', '{invalid json'])('无法识别的正文给出中文错误：%s', async (text) => {
+  await expect(readSegment(withoutSseHeader([text]))).rejects.toThrow('模型返回格式无法识别');
+});
+it('嗅探后的 SSE 断流不作为完成，持续断流明确报错', async () => {
+  const chunks = [': ping\n\n', event('部分'), 'data: {"choices":'];
+  expect(await readSegment(withoutSseHeader(chunks, true))).toEqual({ text: '部分', done: false });
+  const fetcher = vi.fn().mockImplementation(() => Promise.resolve(withoutSseHeader([': ping\n\n', 'data: {'], true)));
+  fetcher.mockResolvedValueOnce(withoutSseHeader(chunks, true));
+  vi.stubGlobal('fetch', fetcher);
+  await expect(complete(settings, '', '')).rejects.toThrow('模型流式返回中途断开（已重试 4 次）');
+  expect(fetcher).toHaveBeenCalledTimes(4);
+});
+it('JSON 正文读取中断也不返回部分成功', async () => {
+  expect(await readSegment(withoutSseHeader(['{"choices":'], true))).toEqual({ text: '', done: false });
+});
 it('支持仅 CR 分隔的事件', async () => {
   expect(await readSegment(sse([event('正文', 'stop').replaceAll('\n', '\r')]))).toMatchObject({ text: '正文', finishReason: 'stop' });
 });

@@ -13,6 +13,7 @@ export function createProxyHandler(deps: Dependencies) {
     const cors = new Headers({
       'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Expose-Headers': 'content-type',
       'Vary': 'Origin',
       'Cache-Control': 'no-store',
     });

@@ -1,21 +1,13 @@
 export type Segment = { text: string; finishReason?: string; done: boolean };
 
 export async function readSegment(response: Response): Promise<Segment> {
-  if (!response.headers?.get('content-type')?.includes('text/event-stream')) {
-    const json = await response.json();
-    if (json.error) throw modelStreamError(json.error);
-    const choice = json.choices?.[0];
-    return {
-      text: typeof choice?.message?.content === 'string' ? choice.message.content : '',
-      finishReason: choice?.finish_reason,
-      done: true,
-    };
-  }
   const segment: Segment = { text: '', done: false };
   if (!response.body) return segment;
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  let mode: 'sse' | 'json' | undefined = response.headers?.get('content-type')?.includes('text/event-stream') ? 'sse' : undefined;
+  let started = false;
   let skipLf = false;
   let data: string[] = [];
   const dispatch = () => {
@@ -40,10 +32,35 @@ export async function readSegment(response: Response): Promise<Segment> {
       try { chunk = await reader.read(); }
       catch { return segment; }
       if (chunk.done) {
+        buffer += decoder.decode();
+        if (mode !== 'sse') {
+          let json;
+          try { json = JSON.parse(buffer); }
+          catch { throw new Error('模型返回格式无法识别，请稍后重试。'); }
+          if (json?.error) throw modelStreamError(json.error);
+          const choice = json?.choices?.[0];
+          return {
+            text: typeof choice?.message?.content === 'string' ? choice.message.content : '',
+            finishReason: choice?.finish_reason,
+            done: true,
+          };
+        }
         dispatch();
         return segment;
       }
       buffer += decoder.decode(chunk.value, { stream: true });
+      if (!started) {
+        buffer = buffer.trimStart();
+        if (!buffer) continue;
+        started = true;
+      }
+      if (!mode) {
+        const prefixes = [':', 'data:', 'event:', 'id:', 'retry:'];
+        if (prefixes.some((prefix) => buffer.startsWith(prefix))) mode = 'sse';
+        else if (prefixes.some((prefix) => prefix.startsWith(buffer))) continue;
+        else mode = 'json';
+      }
+      if (mode === 'json') continue;
       if (skipLf && buffer.length) {
         if (buffer.startsWith('\n')) buffer = buffer.slice(1);
         skipLf = false;
