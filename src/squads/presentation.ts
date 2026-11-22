@@ -1,5 +1,6 @@
 import { getRegistry, getMidRegistry } from './custom';
 import type { Step } from '../storage';
+import { crossPairs } from '../pipeline/crossReview';
 
 export function squadName(id: string): string {
   const registry = getRegistry();
@@ -12,11 +13,29 @@ export function squadName(id: string): string {
 }
 
 export function isCheckStep(id: string): boolean {
-  return id === 'check' || id.endsWith(':check');
+  return id === 'check' || id.endsWith(':check') || id.startsWith('cross:');
 }
 
 export function stepPresentation(id: string, squadId = 'zangu-shouxi') {
   const registry = getRegistry();
+  if (id.startsWith('cross:') && id.includes('→')) {
+    const [reviewer, target] = id
+      .slice('cross:'.length)
+      .split('→')
+      .map((squadId) =>
+        Object.hasOwn(registry, squadId)
+          ? (registry[squadId].segmentTitle ?? registry[squadId].name)
+          : squadId,
+      );
+    return {
+      id,
+      name: `互审 · ${reviewer} 审 ${target}`,
+      title: '团间互审',
+      description: '两稿对照 · 矛盾与遗漏',
+      avatar: '审',
+      avatarIndex: 2,
+    };
+  }
   const [prefix, roleId] = id.includes(':') ? id.split(':') : ['', id];
   const order = ['data', 'draft', 'check', 'final'].indexOf(roleId);
   const index = order < 0 ? 0 : order;
@@ -66,6 +85,9 @@ export function pipelineCards(squadId: string, steps?: Pick<Step, 'roleId'>[]) {
             Object.hasOwn(registry, id)
               ? registry[id].pipeline.map((roleId) => `${id}:${roleId}`)
               : [],
+          ),
+          ...(mid.squads.length > 1 ? crossPairs(mid.squads) : []).map(
+            ({ reviewer, target }) => `cross:${reviewer}→${target}`,
           ),
           'merge:check',
         ]

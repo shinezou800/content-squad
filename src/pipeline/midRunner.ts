@@ -5,6 +5,7 @@ import { getRegistry } from '../squads/custom';
 import { createRunId } from './runner';
 import { complete } from './llm';
 import { checkNumbers } from './checks';
+import { applyCrossReview, crossPairs, crossReviewPrompt } from './crossReview';
 
 export async function runMidPipeline(
   mid: MidSquad,
@@ -50,7 +51,8 @@ export async function runMidPipeline(
         return true;
       });
   };
-  const jobs = validSquads.flatMap((squad, index) =>
+  type Job = { roleId: string; ctx: Context; input: () => unknown; run: () => Promise<string> };
+  const jobs: Job[] = validSquads.flatMap((squad, index) =>
     squad.pipeline.map((id) => ({
       roleId: `${squad.id}:${id}`,
       ctx: contexts[index],
@@ -66,6 +68,42 @@ export async function runMidPipeline(
       },
     })),
   );
+  const crossSteps = crossPairs(validSquads.map((_, index) => index)).map(({ reviewer, target }) => {
+    const payload = () => ({
+      审阅团: title(reviewer),
+      被审团: title(target),
+      被审草稿: contexts[target].outputs.draft,
+      审阅团草稿: contexts[reviewer].outputs.draft,
+      snapshot: unionSnapshot(),
+    });
+    return {
+      label: `〔${title(reviewer)} 审 ${title(target)}〕`,
+      job: {
+        roleId: `cross:${validSquads[reviewer].id}→${validSquads[target].id}`,
+        ctx: contexts[target],
+        input: payload,
+        run: async () => {
+          const input = payload();
+          const modelResult = await complete(
+            settings,
+            crossReviewPrompt(input.审阅团, input.被审团),
+            JSON.stringify(input),
+          );
+          const result = applyCrossReview({
+            draft: input.被审草稿,
+            reviewerDraft: input.审阅团草稿,
+            snapshot: input.snapshot,
+            modelResult,
+            reviewerTitle: input.审阅团,
+            targetTitle: input.被审团,
+          });
+          contexts[target].outputs.draft = result.draft;
+          return result.output;
+        },
+      },
+    };
+  });
+  jobs.push(...crossSteps.map((item) => item.job));
   jobs.push({
     roleId: 'merge:check',
     ctx: contexts.at(-1)!,
@@ -122,7 +160,7 @@ export async function runMidPipeline(
     publish();
     if (step.status === 'failed') return run;
   }
-  run.finalText = `${mergedBody()}\n\n──────── 核对记录 · 发布前请逐项确认 ────────\n${contexts.map((ctx, index) => `【${title(index)}段】\n${ctx.outputs.check}`).join('\n\n')}\n\n【合并全文数字复核】\n${run.steps.at(-1)!.output}`;
+  run.finalText = `${mergedBody()}\n\n──────── 核对记录 · 发布前请逐项确认 ────────\n${contexts.map((ctx, index) => `【${title(index)}段】\n${ctx.outputs.check}`).join('\n\n')}\n\n【互审】\n${crossSteps.map((item) => `${item.label}\n${run.steps.find((step) => step.roleId === item.job.roleId)!.output}`).join('\n\n')}\n\n【合并全文数字复核】\n${run.steps.at(-1)!.output}`;
   publish();
   return run;
 }

@@ -16,7 +16,7 @@ function stripTimestamps(text: string): string {
     .replace(/(?<!\d)\d{4}([/-])\d{2}\1\d{2}(?!\d)/g, ' ')
     .replace(/(?<![\d:])(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?(?![\d:])/g, ' ');
 }
-function* numberMatches(text: string, snapshot: Snapshot, skipDerived = false) {
+export function* numberMatches(text: string, snapshot: Snapshot, skipDerived = false) {
   text = stripTimestamps(text);
   let derivedRangeEnd = 0;
   for (const match of text.matchAll(numberPattern)) {
@@ -57,7 +57,7 @@ function* numberMatches(text: string, snapshot: Snapshot, skipDerived = false) {
     yield match;
   }
 }
-function currencyOf(unit = '') {
+export function currencyOf(unit = '') {
   return /港元|港币|HKD/i.test(unit)
     ? 'HKD'
     : /人民币|RMB|元/i.test(unit)
@@ -66,7 +66,7 @@ function currencyOf(unit = '') {
         ? 'non-monetary'
         : undefined;
 }
-function unitScale(unit = ''): number {
+export function unitScale(unit = ''): number {
   return unit.startsWith('万亿')
     ? 1e12
     : unit.startsWith('亿')
