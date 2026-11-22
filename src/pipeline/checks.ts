@@ -10,9 +10,11 @@ function stripTimestamps(text: string): string {
     )
     .replace(/(?<!\d)\d{4}年\d{1,2}月\d{1,2}日(?:\s*\d{1,2}:\d{2}(?::\d{2})?)?(?!\d)/g, ' ')
     .replace(
-      /(?<!\d)(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])(?:[01]\d|2[0-3])[0-5]\d[0-5]\d(?!\d)/g,
+      /(?<!\d)(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])(?:[01]\d|2[0-3])[0-5]\d[0-5]\d(?:[~～-](?:\d{6}|\d{4}|\d{2}))?(?!\d)/g,
       ' ',
-    );
+    )
+    .replace(/(?<!\d)\d{4}([/-])\d{2}\1\d{2}(?!\d)/g, ' ')
+    .replace(/(?<![\d:])(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?(?![\d:])/g, ' ');
 }
 function* numberMatches(text: string, snapshot: Snapshot, skipDerived = false) {
   text = stripTimestamps(text);
@@ -121,7 +123,16 @@ export function checkNumbers(draft: string, snapshot: Snapshot): Flag[] {
           });
     }
   }
-  for (const m of numberMatches(draft, snapshot, true)) {
+  const quotedDraft = draft
+    .split(/([。！？\n])/)
+    .map(
+      (sentence) =>
+        /若|如果|假设|对应价格|仅作数字推演|推演|情景演算|不是买入计划|测算|回升至|修复至/.test(
+          sentence,
+        ) ? '' : sentence,
+    )
+    .join('');
+  for (const m of numberMatches(quotedDraft, snapshot, true)) {
     const raw = Number(m[1].replaceAll(',', ''));
     const scale = unitScale(m[2]);
     const digits = Math.min(m[1].split('.')[1]?.length || 0, 2);
