@@ -124,12 +124,26 @@ it('网络诊断隐藏完整请求 payload 并截断到 200 字符', async () =>
   expect(json.error).not.toContain('private prompt');
   expect(json.error.length).toBe(200);
 });
+it('延迟 JSON 聊天响应保持未包装且不注入心跳', async () => {
+  vi.useFakeTimers();
+  const { handler, fetcher } = setup('owner', 100);
+  let source!: ReadableStreamDefaultController<Uint8Array>;
+  const upstream = new Response(new ReadableStream<Uint8Array>({ start(controller) { source = controller; } }), { headers: { 'Content-Type': 'application/json' } });
+  fetcher.mockResolvedValue(upstream);
+  const response = await handler(request('user-token', { ...body, path: 'chat/completions', payload: {} }));
+  expect(response.body).toBe(upstream.body);
+  await vi.advanceTimersByTimeAsync(20_000);
+  expect(vi.getTimerCount()).toBe(0);
+  source.enqueue(new TextEncoder().encode('{"choices":[{"message":{"content":"JSON正文"}}]}'));
+  source.close();
+  expect(await response.json()).toEqual({ choices: [{ message: { content: 'JSON正文' } }] });
+});
 it.each(['end', 'error', 'cancel'])('心跳仅在事件边界注入，%s 时清理定时器', async (ending) => {
   vi.useFakeTimers();
   const { handler, fetcher } = setup('owner', 100);
   let source!: ReadableStreamDefaultController<Uint8Array>;
   const cancel = vi.fn();
-  fetcher.mockResolvedValue(new Response(new ReadableStream<Uint8Array>({ start(controller) { source = controller; }, cancel })));
+  fetcher.mockResolvedValue(new Response(new ReadableStream<Uint8Array>({ start(controller) { source = controller; }, cancel }), { headers: { 'Content-Type': 'text/event-stream' } }));
   const response = await handler(request('user-token', { ...body, path: 'chat/completions', payload: {} }));
   const reader = response.body!.getReader();
   const encoder = new TextEncoder();

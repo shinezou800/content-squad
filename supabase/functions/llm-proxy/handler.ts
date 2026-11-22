@@ -95,6 +95,7 @@ export function createProxyHandler(deps: Dependencies) {
     if (retryAfter) cors.set('Retry-After', retryAfter);
     cors.set('Content-Type', upstream.headers.get('content-type') || 'application/json');
     const body = upstream.ok && upstream.body && target.input.path === 'chat/completions'
+      && upstream.headers.get('content-type')?.toLowerCase().includes('text/event-stream')
       ? heartbeat(upstream.body, deps.heartbeatMs ?? 10_000) : upstream.body;
     return new Response(body, { status: upstream.status, headers: cors });
   };
