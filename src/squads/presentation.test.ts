@@ -18,7 +18,7 @@ it('旧单团角色保持名称、顺序及成稿卡片', () => {
     ),
   ).toEqual(cards);
 });
-it('中团七步名称与顺序正确，历史步骤使用同一标签', () => {
+it('中团九步名称与顺序正确，历史步骤使用同一标签', () => {
   const cards = pipelineCards('mid-zangu-ai');
   expect(cards.map((card) => card.name)).toEqual([
     '攒股收息 · 小数',
@@ -27,6 +27,8 @@ it('中团七步名称与顺序正确，历史步骤使用同一标签', () => {
     'AI手记 · 小数',
     'AI手记 · 小稿',
     'AI手记 · 小核',
+    '互审 · AI手记 审 攒股收息',
+    '互审 · 攒股收息 审 AI手记',
     '小核 · 合并复核',
   ]);
   expect(cards.at(-1)?.id).toBe('merge:check');
@@ -39,13 +41,16 @@ it('中团七步名称与顺序正确，历史步骤使用同一标签', () => {
   expect(squadName('mid-zangu-ai')).toBe('攒股收息 × AI手记');
   expect(squadName('zangu-shouxi')).toBe('攒股收息内容线');
 });
-it('银行中团卡片按配置生成十步及段标签，历史记录一致', () => {
+it('银行中团卡片按配置生成十三步及段标签，历史记录一致', () => {
   const cards = pipelineCards('mid-bank');
-  expect(cards).toHaveLength(10);
+  expect(cards).toHaveLength(13);
   expect(cards.map((card) => card.name)).toEqual([
     ...['四大行', '股份制银行', '城商银行'].flatMap((title) =>
       ['小数', '小稿', '小核'].map((role) => `${title} · ${role}`),
     ),
+    '互审 · 股份制银行 审 四大行',
+    '互审 · 城商银行 审 股份制银行',
+    '互审 · 四大行 审 城商银行',
     '小核 · 合并复核',
   ]);
   expect(
@@ -56,7 +61,7 @@ it('银行中团卡片按配置生成十步及段标签，历史记录一致', (
   ).toEqual(cards);
   expect(squadName('mid-bank')).toBe('银行中团');
 });
-it.each(['check', 'zangu-shouxi:check', 'ai-shouji:check', 'merge:check', 'old:check'])(
+it.each(['check', 'zangu-shouxi:check', 'ai-shouji:check', 'merge:check', 'old:check', 'cross:ai-shouji→zangu-shouxi'])(
   '所有核对步骤使用默认展开的复核样式：%s',
   (id) => expect(isCheckStep(id)).toBe(true),
 );

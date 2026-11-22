@@ -21,7 +21,8 @@ const wrap = (text: string) =>
   `⚠️ 模拟盘记录。${text}\n持仓披露：观察池记录。\n非投资建议。数据来源：腾讯行情、主人手动提供。`;
 const draftA = wrap('攒股记录，现价21.7港元。');
 const draftB = wrap('AI 实测手记，每股分红1.49港元。');
-const responses = ['数据简报甲', draftA, '[]', '数据简报乙', draftB, '[]', '[]'];
+const responses = ['数据简报甲', draftA, '[]', '数据简报乙', draftB, '[]', '[]', '[]', '[]'];
+const crossEmpty = '【规则核对】\n[]\n\n【模型互审】\n[]\n\n【已改进】\n[]\n\n【未改 · 双方保留】\n[]';
 it('golden: mid-zangu-ai finalText and step IDs stay byte-identical', async () => {
   const run = await runMidPipeline(mid, '选题', settings, () => {});
   expect(run.steps.map((step) => step.roleId)).toEqual([
@@ -31,11 +32,13 @@ it('golden: mid-zangu-ai finalText and step IDs stay byte-identical', async () =
     'ai-shouji:data',
     'ai-shouji:draft',
     'ai-shouji:check',
+    'cross:ai-shouji→zangu-shouxi',
+    'cross:zangu-shouxi→ai-shouji',
     'merge:check',
   ]);
   const review = '【规则核对】\n[]\n\n【模型事实核对】\n[]';
   expect(run.finalText).toBe(
-    `──────── 攒股收息 ────────\n\n${draftA}\n\n──────── AI手记 ────────\n\n${draftB}\n\n──────── 核对记录 · 发布前请逐项确认 ────────\n【攒股收息段】\n${review}\n\n【AI手记段】\n${review}\n\n【合并全文数字复核】\n${review}`,
+    `──────── 攒股收息 ────────\n\n${draftA}\n\n──────── AI手记 ────────\n\n${draftB}\n\n──────── 核对记录 · 发布前请逐项确认 ────────\n【攒股收息段】\n${review}\n\n【AI手记段】\n${review}\n\n【互审】\n〔AI手记 审 攒股收息〕\n${crossEmpty}\n\n〔攒股收息 审 AI手记〕\n${crossEmpty}\n\n【合并全文数字复核】\n${review}`,
   );
 });
 beforeEach(() => {
@@ -92,6 +95,8 @@ it('中团配置按顺序注册，角色生命周期完整，快照仅抓取一�
     'ai-shouji:data',
     'ai-shouji:draft',
     'ai-shouji:check',
+    'cross:ai-shouji→zangu-shouxi',
+    'cross:zangu-shouxi→ai-shouji',
     'merge:check',
   ];
   expect(run.squadId).toBe(mid.id);
@@ -101,7 +106,7 @@ it('中团配置按顺序注册，角色生命周期完整，快照仅抓取一�
       .filter((value) => value.steps.some((step) => step.status === 'running'))
       .map((value) => value.steps.find((step) => step.status === 'running')!.roleId),
   ).toEqual(ids);
-  expect(progress).toHaveLength(16);
+  expect(progress).toHaveLength(20);
   expect(progress[0].steps.every((step) => step.status === 'pending')).toBe(true);
   expect(progress[0].snapshot).toEqual([]);
   expect(progress[0].finalText).toBe('');
@@ -129,7 +134,7 @@ it('中团配置按顺序注册，角色生命周期完整，快照仅抓取一�
     value: 1.49,
     unit: '港元',
   });
-  expect(complete).toHaveBeenCalledTimes(7);
+  expect(complete).toHaveBeenCalledTimes(9);
   expect(vi.mocked(complete).mock.calls.every((call) => call[0] === settings)).toBe(true);
   expect(JSON.stringify(run)).not.toContain('private-key');
 });
@@ -147,17 +152,17 @@ it('正文不改写且依次排列，独立核对及合并核对统一置于正�
   const run = await runMidPipeline(mid, '选题', settings, () => {});
   const body = `──────── 攒股收息 ────────\n\n${draftA}\n\n──────── AI手记 ────────\n\n${draftB}`;
   expect(run.finalText).toBe(
-    `${body}\n\n──────── 核对记录 · 发布前请逐项确认 ────────\n【攒股收息段】\n${run.steps[2].output}\n\n【AI手记段】\n${run.steps[5].output}\n\n【合并全文数字复核】\n${run.steps[6].output}`,
+    `${body}\n\n──────── 核对记录 · 发布前请逐项确认 ────────\n【攒股收息段】\n${run.steps[2].output}\n\n【AI手记段】\n${run.steps[5].output}\n\n【互审】\n〔AI手记 审 攒股收息〕\n${run.steps[6].output}\n\n〔攒股收息 审 AI手记〕\n${run.steps[7].output}\n\n【合并全文数字复核】\n${run.steps[8].output}`,
   );
-  expect(vi.mocked(complete).mock.calls[6][1]).toContain('小核 · 合并复核');
-  expect(vi.mocked(complete).mock.calls[6][1]).toContain('不改写正文');
-  expect(JSON.parse(vi.mocked(complete).mock.calls[6][2])).toEqual({
+  expect(vi.mocked(complete).mock.calls[8][1]).toContain('小核 · 合并复核');
+  expect(vi.mocked(complete).mock.calls[8][1]).toContain('不改写正文');
+  expect(JSON.parse(vi.mocked(complete).mock.calls[8][2])).toEqual({
     draft: body,
     snapshot: run.snapshot,
   });
 });
 
-it.each([0, 4, 6])('步骤失败立即停止，后续不执行，不产生成稿：%s', async (failure) => {
+it.each([0, 4, 6, 7, 8])('步骤失败立即停止，后续不执行，不产生成稿：%s', async (failure) => {
   let call = 0;
   vi.mocked(complete).mockImplementation(async () => {
     const index = call++;
@@ -221,7 +226,7 @@ it('合并复核只检查数字，不检查两段披露位置或禁词', async (
   });
   const run = await runMidPipeline(mid, '选题', settings, () => {});
   const flags = JSON.parse(
-    run.steps[6].output!.split('【规则核对】\n')[1].split('\n\n【模型事实核对】')[0],
+    run.steps[8].output!.split('【规则核对】\n')[1].split('\n\n【模型事实核对】')[0],
   );
   expect(flags).toHaveLength(2);
   expect(flags.every((flag: { 问题: string }) => flag.问题.startsWith('数字未在快照'))).toBe(true);
@@ -259,4 +264,60 @@ it('AI手记可独立取数运行，提示词保留实测、不荐股及发布�
     '非投资建议。数据来源：',
   ])
     expect(prompt).toContain(rule);
+});
+
+it('互审抓到两份草稿同一股票数字不同，审出的真实错误改进草稿并记入核对记录', async () => {
+  const wrong = wrap('CNOOC现价22.5港元。');
+  const right = wrap('CNOOC现价21.7港元。');
+  const outputs = [
+    '数据简报甲',
+    right,
+    '[]',
+    '数据简报乙',
+    wrong,
+    '[]',
+    '[]',
+    JSON.stringify([
+      { 原文: '现价22.5港元', 问题: '与快照及攒股收息段不符', 依据: '快照现价21.7港元', 改为: '现价21.7港元' },
+    ]),
+    '[]',
+  ];
+  let call = 0;
+  vi.mocked(complete).mockImplementation(async () => outputs[call++]);
+  const run = await runMidPipeline(mid, '选题', settings, () => {});
+  expect(run.steps.every((step) => step.status === 'done')).toBe(true);
+  const [aReviewsZangu, zanguReviewsAi] = [run.steps[6], run.steps[7]];
+  expect(aReviewsZangu.roleId).toBe('cross:ai-shouji→zangu-shouxi');
+  expect(aReviewsZangu.output).toContain('与「AI手记」段矛盾：同一股票（CNOOC）现价数字不同');
+  expect(zanguReviewsAi.output).toContain('与「攒股收息」段矛盾：同一股票（CNOOC）现价数字不同');
+  const crossCall = vi.mocked(complete).mock.calls[7];
+  expect(crossCall[1]).toContain('「攒股收息」团的互审员');
+  expect(JSON.parse(crossCall[2])).toEqual({
+    审阅团: '攒股收息',
+    被审团: 'AI手记',
+    被审草稿: wrong,
+    审阅团草稿: right,
+    snapshot: run.snapshot,
+  });
+  expect(crossCall[0]).toBe(settings);
+  const body = `──────── 攒股收息 ────────\n\n${right}\n\n──────── AI手记 ────────\n\n${right}`;
+  expect(JSON.parse(vi.mocked(complete).mock.calls[8][2]).draft).toBe(body);
+  expect(run.finalText.startsWith(`${body}\n\n──────── 核对记录`)).toBe(true);
+  const record = run.finalText.split('【互审】\n')[1];
+  expect(record).toContain('〔攒股收息 审 AI手记〕');
+  expect(record).toContain('"段落": "AI手记"');
+  expect(record).toContain('"审出": "攒股收息"');
+  expect(record).toContain('"改为": "现价21.7港元"');
+  expect(run.finalText.indexOf('【互审】')).toBeLessThan(run.finalText.indexOf('【合并全文数字复核】'));
+});
+
+it('互审无法判定的冲突双方保留，正文两段都不删', async () => {
+  const outputs = ['简报', wrap('CNOOC现价22.5港元。'), '[]', '简报', wrap('CNOOC现价21.7港元。'), '[]', '[]', '[]', '[]'];
+  let call = 0;
+  vi.mocked(complete).mockImplementation(async () => outputs[call++]);
+  const run = await runMidPipeline(mid, '选题', settings, () => {});
+  expect(run.finalText).toContain('CNOOC现价22.5港元');
+  expect(run.finalText).toContain('CNOOC现价21.7港元');
+  for (const step of run.steps.slice(6, 8))
+    expect(step.output!.split('【未改 · 双方保留】\n')[1]).toContain('"标记": "冲突"');
 });

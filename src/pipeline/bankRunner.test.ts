@@ -24,7 +24,8 @@ const drafts = titles.map(
   (title, index) =>
     `⚠️ 模拟盘记录。${title}观察池记录，现价${(index + 1) * 100 + 1}元。\n持仓披露：以快照分类为准。\n非投资建议。数据来源：腾讯行情。`,
 );
-const responses = drafts.flatMap((draft) => ['数据简报', draft, '[]']).concat('[]');
+const responses = drafts.flatMap((draft) => ['数据简报', draft, '[]']).concat('[]', '[]', '[]', '[]');
+const crossEmpty = '【规则核对】\n[]\n\n【模型互审】\n[]\n\n【已改进】\n[]\n\n【未改 · 双方保留】\n[]';
 beforeEach(() => {
   let call = 0;
   let quote = 0;
@@ -65,15 +66,18 @@ afterEach(() => {
   vi.mocked(complete).mockReset();
 });
 
-it('银行中团十步顺序执行、三段合并、独立取数并使用全部快照复核', async () => {
+it('银行中团十三步顺序执行、三段合并、独立取数并使用全部快照复核', async () => {
   const progress: Run[] = [];
   const run = await runMidPipeline(mid, '银行记录', settings, (value) => progress.push(value));
   const ids = [
     ...mid.squads.flatMap((id) => ['data', 'draft', 'check'].map((role) => `${id}:${role}`)),
+    'cross:bank-joint→bank-big4',
+    'cross:bank-city→bank-joint',
+    'cross:bank-big4→bank-city',
     'merge:check',
   ];
   expect(run.steps.map((step) => step.roleId)).toEqual(ids);
-  expect(run.steps).toHaveLength(10);
+  expect(run.steps).toHaveLength(13);
   expect(run.steps.every((step) => step.status === 'done')).toBe(true);
   expect(
     progress
@@ -122,7 +126,7 @@ it('银行中团十步顺序执行、三段合并、独立取数并使用全部�
   const body = `──────── 四大行 ────────\n\n${drafts[0]}\n\n──────── 股份制银行 ────────\n\n${drafts[1]}\n\n──────── 城商银行 ────────\n\n${drafts[2]}`;
   const review = '【规则核对】\n[]\n\n【模型事实核对】\n[]';
   expect(run.finalText).toBe(
-    `${body}\n\n──────── 核对记录 · 发布前请逐项确认 ────────\n${titles.map((title) => `【${title}段】\n${review}`).join('\n\n')}\n\n【合并全文数字复核】\n${review}`,
+    `${body}\n\n──────── 核对记录 · 发布前请逐项确认 ────────\n${titles.map((title) => `【${title}段】\n${review}`).join('\n\n')}\n\n【互审】\n${['〔股份制银行 审 四大行〕', '〔城商银行 审 股份制银行〕', '〔四大行 审 城商银行〕'].map((label) => `${label}\n${crossEmpty}`).join('\n\n')}\n\n【合并全文数字复核】\n${review}`,
   );
   expect(body.match(/──────── .* ────────/g)).toHaveLength(3);
   expect(run.steps.at(-1)!.output).toBe(review);
@@ -133,7 +137,7 @@ it('银行中团十步顺序执行、三段合并、独立取数并使用全部�
   expect(JSON.parse(run.steps.at(-1)!.input!).snapshot).toEqual(run.snapshot);
 });
 
-it.each([0, 3, 4, 6, 9])('银行步骤失败后不抓取后续银行，不生成正文：%s', async (failure) => {
+it.each([0, 3, 4, 6, 9, 10, 12])('银行步骤失败后不抓取后续银行，不生成正文：%s', async (failure) => {
   let call = 0;
   vi.mocked(complete).mockImplementation(async () => {
     const index = call++;
@@ -150,7 +154,7 @@ it.each([0, 3, 4, 6, 9])('银行步骤失败后不抓取后续银行，不生成
 });
 
 it('N团合并快照按代码去重，保留第一份事实', async () => {
-  const outputs = drafts.flatMap((draft) => [draft, '[]']).concat('[]');
+  const outputs = drafts.flatMap((draft) => [draft, '[]']).concat('[]', '[]', '[]', '[]');
   let call = 0;
   vi.mocked(complete).mockImplementation(async () => outputs[call++]);
   for (const [index, id] of mid.squads.entries()) {
@@ -238,5 +242,27 @@ it('缺少匹配核对角色的银行流水线在取数前拒绝', async () => {
     expect(fetch).not.toHaveBeenCalled();
   } finally {
     squad.roles = roles;
+  }
+});
+
+it('银行中团三团环形互审，审出条目写入该步与最终核对记录的互审段', async () => {
+  const outputs = [...responses];
+  outputs[10] = JSON.stringify([
+    { 原文: '股份制银行观察池记录', 问题: '与城商银行段重复论述', 依据: '城商银行段同样写观察池记录' },
+  ]);
+  let call = 0;
+  vi.mocked(complete).mockImplementation(async () => outputs[call++]);
+  const run = await runMidPipeline(mid, '银行记录', settings, () => {});
+  expect(run.steps.every((step) => step.status === 'done')).toBe(true);
+  expect(run.steps[10].roleId).toBe('cross:bank-city→bank-joint');
+  const kept = JSON.parse(run.steps[10].output!.split('【未改 · 双方保留】\n')[1]);
+  expect(kept).toEqual([
+    { 标记: '待人工确认', 原文: '股份制银行观察池记录', 问题: '与城商银行段重复论述', 依据: '城商银行段同样写观察池记录' },
+  ]);
+  expect(run.finalText.split('【互审】\n')[1]).toContain('〔城商银行 审 股份制银行〕\n' + run.steps[10].output);
+  for (const index of [9, 10, 11]) {
+    const input = JSON.parse(vi.mocked(complete).mock.calls[index][2]);
+    expect(input.snapshot).toEqual(run.snapshot);
+    expect(Object.keys(input)).toEqual(['审阅团', '被审团', '被审草稿', '审阅团草稿', 'snapshot']);
   }
 });

@@ -208,10 +208,12 @@ it('自定义中团按成员顺序执行，三步每团加复核，合并使用�
   const run = await runContentLine(mid.id, '记录', settings, () => {});
   expect(run.steps.map((s) => s.roleId)).toEqual([
     ...mid.squads.flatMap((id) => ['data', 'draft', 'check'].map((role) => `${id}:${role}`)),
+    `cross:${mid.squads[1]}→${mid.squads[0]}`,
+    `cross:${mid.squads[0]}→${mid.squads[1]}`,
     'merge:check',
   ]);
   expect(run.steps.every((s) => s.status === 'done')).toBe(true);
-  expect(pipelineCards(mid.id)).toHaveLength(7);
+  expect(pipelineCards(mid.id)).toHaveLength(9);
   expect(pipelineCards(mid.id)[0].name).toBe('白酒 · 小数');
   expect(run.finalText).toMatch(/^──────── 白酒 ────────/);
   expect(run.snapshot.map((s) => s.code)).toEqual(['600519', '000858', '000568', '00883']);
