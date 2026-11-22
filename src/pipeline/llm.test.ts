@@ -2,6 +2,15 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { complete } from './llm';
 const settings = { key: 'test-only', model: 'free', pool: '' };
 afterEach(() => vi.unstubAllGlobals());
+it('仅核对请求过滤模型舍入差异，写作和非JSON请求不变', async () => {
+  const content = JSON.stringify([{ 原文: '7.00%', 数据源值: '6.9975%', 问题: '差异' }]);
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+    ok: true, json: async () => ({ choices: [{ message: { content } }] }),
+  }));
+  expect(await complete(settings, '核对', JSON.stringify({ draft: '股息率7.00%', snapshot: [] }))).toBe('[]');
+  expect(await complete(settings, '写作', JSON.stringify({ topic: '股息', snapshot: [] }))).toBe(content);
+  expect(await complete(settings, '其他', '非JSON')).toBe(content);
+});
 it('未填密钥时不发请求', async () => {
   const fetcher = vi.fn();
   vi.stubGlobal('fetch', fetcher);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkDraft, checkNumbers } from './checks';
+import { checkDraft, checkNumbers, filterModelCheck } from './checks';
 import type { Snapshot } from '../data/market';
 const snapshot: Snapshot = [
   {
@@ -14,6 +14,50 @@ const snapshot: Snapshot = [
 ];
 const wrap = (text: string) =>
   `⚠️ 模拟盘记录。${text}\n持仓披露：未提供。\n非投资建议。数据来源：腾讯行情、东方财富。`;
+describe('模型核对数值容差', () => {
+  it.each([
+    ['4.91%', '4.908510638297872%'],
+    ['7.00%', '6.9975%'],
+    ['760.79亿', '760.78709亿'],
+    ['760.79亿元', '76078709000元'],
+    ['33,502.19亿元', '33502.19亿元'],
+    ['微跌0.45%', '-0.45%'],
+  ])('过滤舍入差异 %s / %s', (原文, 数据源值) => {
+    expect(JSON.parse(filterModelCheck(JSON.stringify([{ 原文, 数据源值, 问题: '数值不符' }])))).toEqual([]);
+  });
+  it.each([
+    ['4.81%', '4.9085%'], ['PB中位数0.44倍', '0.49倍'],
+    ['9.50元', '9.40元'], ['21.70港元', '21.70元'],
+    ['4.91%', '4.9085倍'], ['4.91%', '未提供'],
+    ['4.91%和7.00%', '4.9085%'], ['4.91%', '4.9085%（估算）'],
+    ['2026-11-22 4.91%', '4.9085%'],
+  ])('保留差异或不明确项目 %s / %s', (原文, 数据源值) => {
+    const result = JSON.stringify([{ 原文, 数据源值, 问题: '需核对' }]);
+    expect(filterModelCheck(result)).toBe(result);
+  });
+  it.each(['[]', '不是JSON', '{}', '[null,{},1]', '[{"原文":"4.91%"}]'])('保留空或不可解析输出 %s', (text) => {
+    expect(filterModelCheck(text)).toBe(text);
+  });
+  it('保留未过滤条目和代码围栏', () => {
+    const keep = { 原文: '0.44', 数据源值: '0.49', 问题: '中位数错误' };
+    const result = filterModelCheck('```json\n' + JSON.stringify([
+      { 原文: '7.00%', 数据源值: '6.9975%', 问题: '不符' }, keep,
+    ]) + '\n```');
+    expect(result).toBe('```json\n' + JSON.stringify([keep], null, 2) + '\n```');
+  });
+});
+describe('文字方向百分比', () => {
+  it.each(['跌', '下跌', '微跌', '下滑', '回落', '涨', '上涨', '微涨'])('%s 紧邻百分数推断符号', (word) => {
+    const value = /涨/.test(word) ? 0.45 : -0.45;
+    const data: Snapshot = [{ code: '601398', name: '工商银行', fields: [
+      { label: '涨跌幅', value, unit: '%', source: '腾讯', fetchedAt: '' },
+    ] }];
+    expect(checkNumbers(`${word} 0.45%`, data)).toEqual([]);
+    expect(checkDraft(wrap(`${word}0.45%`), data)).toEqual([]);
+    data[0].fields[0].value = /涨/.test(word) ? 0.55 : -0.55;
+    expect(checkNumbers(`${word}0.45%`, data)).toHaveLength(1);
+  });
+});
 describe('确定性核对', () => {
   const timestamps = [
     '2026-11-22T01:20:06Z',
