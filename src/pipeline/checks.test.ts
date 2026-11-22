@@ -29,6 +29,16 @@ describe('确定性核对', () => {
     '2026年11月20日',
     '2026-11-22 02:04 UTC',
     '2026-11-22 02:04',
+    '2026-11-22',
+    '2026/11/22',
+    '2026年11月22日',
+    '16:14',
+    '16:14:47',
+    '00:00',
+    '23:59:59',
+    '20261120161451~161500',
+    '20261120161451～1500',
+    '20261120161451-00',
   ];
   it.each(timestamps)('正文时间戳不拆成数字片段：%s', (timestamp) => {
     expect(checkNumbers(`行情时间：${timestamp}。`, [])).toEqual([]);
@@ -92,6 +102,100 @@ describe('确定性核对', () => {
       '02',
       '17',
     ]);
+  });
+  it.each([
+    '抓取时间2026-11-22',
+    '2026-11-22 快照',
+    '2026-11-20 盘后',
+    '行情取自腾讯接口（20261120161451~161500）',
+    '2026年11月20日16:14',
+  ])('时间说明不留下日期或区间尾部：%s', (text) => {
+    expect(checkNumbers(text, [])).toEqual([]);
+    expect(checkDraft(wrap(text), [])).toEqual([]);
+  });
+  it.each(['24:00', '23:60', '23:59:60', '123:45', '12:345'])(
+    '无效独立时间不能被局部剔除：%s',
+    (text) => {
+      expect(checkNumbers(text, []).map((flag) => flag.原文)).toEqual(text.split(':'));
+    },
+  );
+  it.each(['~', '～', '-'])('行情区间整体剔除，独立六位代码保留：%s', (separator) => {
+    for (const tail of ['00', '1500', '161500']) {
+      const text = `20261120161451${separator}${tail}；600519 贵州茅台，现价9.50元，股息率4.54%`;
+      expect(checkNumbers(text, []).map((flag) => flag.原文)).toEqual(['600519', '9.50', '4.54']);
+      const data: Snapshot = [
+        {
+          code: '600519',
+          name: '贵州茅台',
+          fields: [
+            {
+              label: '时间',
+              value: `20261120161451${separator}${tail}`,
+              source: '腾讯',
+              fetchedAt: '',
+            },
+          ],
+        },
+      ];
+      expect(checkNumbers('600519 贵州茅台', data)).toEqual([]);
+      expect(checkNumbers('161500', data).map((flag) => flag.原文)).toEqual(['161500']);
+    }
+  });
+  const scenario =
+    '若PE回升至6.5倍，对应价格约18.07元；若PB修复至0.6倍，参考每股净资产约40.6元，对应价格约24.36元，仅作数字推演。';
+  it('情景句包括分号后的全部数字，不影响单独句子的直接价格检查', () => {
+    const data: Snapshot = [
+      {
+        code: '601398',
+        name: '工商银行',
+        fields: [{ label: '现价', value: 9.4, unit: '元', source: '腾讯', fetchedAt: '' }],
+      },
+    ];
+    expect(checkNumbers(scenario, [])).toEqual([]);
+    expect(checkDraft(wrap(scenario), [])).toEqual([]);
+    expect(checkNumbers(`${scenario}现价9.50元。`, data).map((flag) => flag.原文)).toEqual([
+      '9.50',
+    ]);
+    expect(checkDraft(wrap(`现价9.50元。${scenario}`), data).map((flag) => flag.原文)).toEqual([
+      '9.50',
+    ]);
+    expect(checkNumbers(`现价9.40元。${scenario}`, data)).toEqual([]);
+  });
+  it.each([
+    '若',
+    '如果',
+    '假设',
+    '对应价格',
+    '仅作数字推演',
+    '推演',
+    '情景演算',
+    '不是买入计划',
+    '测算',
+    '回升至',
+    '修复至',
+  ])('情景标记在句中任意位置使本句数字跳过：%s', (marker) => {
+    expect(checkNumbers(`9.50元；${marker}；6.5倍`, [])).toEqual([]);
+    expect(checkNumbers(`9.50元；6.5倍；${marker}`, [])).toEqual([]);
+  });
+  it.each(['。', '！', '？', '\n'])('情景过滤不跨句边界：%j', (separator) => {
+    expect(checkNumbers(`假设6.5倍${separator}现价9.50元`, []).map((flag) => flag.原文)).toEqual([
+      '9.50',
+    ]);
+    expect(checkNumbers(`现价9.50元${separator}假设6.5倍`, []).map((flag) => flag.原文)).toEqual([
+      '9.50',
+    ]);
+  });
+  it('情景过滤只用于正文，快照情景字符串仍可提供匹配数值', () => {
+    const data: Snapshot = [
+      {
+        code: '601398',
+        name: '工商银行',
+        fields: [{ label: '说明', value: '测算9.40元', source: '腾讯', fetchedAt: '' }],
+      },
+    ];
+    expect(checkNumbers('现价9.40元', data)).toEqual([]);
+    expect(checkNumbers('现价9.50元', data)).toHaveLength(1);
+    expect(checkNumbers('', data)).toEqual([]);
   });
   it.each([
     ['33,502.19亿元', 33502.19],
