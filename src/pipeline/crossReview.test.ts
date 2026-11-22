@@ -62,9 +62,10 @@ it('一致、四舍五入、不同股票、不同币种或情景演算不算矛�
     wrap('中海油的记录还没有数字。'),
   ])
     expect(crossConflicts(target, reviewer, snapshot, '甲')).toEqual([]);
-  expect(
-    crossConflicts(wrap('工商银行现价7.5元。'), reviewer, snapshot, '甲').map((f) => f.问题),
-  ).toEqual(['与「甲」段矛盾：同一股票（工商银行）现价数字不同']);
+  for (const target of ['工商银行现价7.5元。', '工商银行现价：7.5元。', '工商银行现价 7.5元。'])
+    expect(crossConflicts(wrap(target), reviewer, snapshot, '甲').map((f) => f.问题)).toEqual([
+      '与「甲」段矛盾：同一股票（工商银行）现价数字不同',
+    ]);
 });
 
 it('真实错误按模型改为直接改进被审段，记录段落、改动与审出团', () => {

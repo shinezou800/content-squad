@@ -57,6 +57,7 @@ function mentions(draft: string, snapshot: Snapshot): Mention[] {
       for (const m of numberMatches(window, snapshot)) {
         const label = m.input
           .slice(0, m.index)
+          .replace(/[：:\s]+$/, '')
           .split(/[，,。；;：:、（）()\s【】「」“”]|\d/)
           .at(-1)!
           .replace(/^(?:万亿|亿|万)?(?:人民币元|人民币|港元|港币|HKD|元|[%％倍股])?/i, '')
