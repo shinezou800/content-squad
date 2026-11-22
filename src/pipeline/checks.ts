@@ -66,7 +66,7 @@ export function checkDraft(draft: string, snapshot: Snapshot): Flag[] {
         .at(-1)!;
       if (
         /^补(?:全|充|贴|助)/.test(rest) ||
-        /(?:未|不|没(?:有)?|无)\s*(?:(?:做|进行)\s*)?(?:任何\s*)?$/.test(clause) ||
+        /(?:未曾|未|不再|不需|不用|不必|不|没再|没(?:有)?|无需|无|从未)\s*(?:(?:做|进行)\s*)?(?:任何\s*)?$/.test(clause) ||
         !(/^补(?:仓|买|一点)/.test(rest) || /(?:可以|该)\s*$/.test(clause))
       )
         continue;
