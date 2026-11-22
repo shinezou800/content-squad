@@ -124,14 +124,14 @@ export function checkNumbers(draft: string, snapshot: Snapshot): Flag[] {
     }
   }
   const quotedDraft = draft
-    .split(/[。！？\n]/)
-    .filter(
+    .split(/([。！？\n])/)
+    .map(
       (sentence) =>
-        !/若|如果|假设|对应价格|仅作数字推演|推演|情景演算|不是买入计划|测算|回升至|修复至/.test(
+        /若|如果|假设|对应价格|仅作数字推演|推演|情景演算|不是买入计划|测算|回升至|修复至/.test(
           sentence,
-        ),
+        ) ? '' : sentence,
     )
-    .join('\n');
+    .join('');
   for (const m of numberMatches(quotedDraft, snapshot, true)) {
     const raw = Number(m[1].replaceAll(',', ''));
     const scale = unitScale(m[2]);

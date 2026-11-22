@@ -185,6 +185,23 @@ describe('确定性核对', () => {
       '9.50',
     ]);
   });
+  it.each(['9.40元', '4.54%'])('保留原句界，前句末尾单位不影响后句负号：%s', (prefix) => {
+    const data: Snapshot = [{
+      code: '601398', name: '工商银行',
+      fields: [
+        { label: '现价', value: 9.4, unit: '元', source: '腾讯', fetchedAt: '' },
+        { label: '股息率', value: 4.54, unit: '%', source: '腾讯', fetchedAt: '' },
+        { label: '涨跌幅', value: -1.2, unit: '%', source: '腾讯', fetchedAt: '' },
+      ],
+    }];
+    for (const delimiter of ['。', '！', '？']) {
+      const draft = `${prefix}${delimiter}-1.2%`;
+      expect(checkNumbers(draft, data)).toEqual([]);
+      expect(checkDraft(wrap(draft), data)).toEqual([]);
+      expect(checkNumbers(`${prefix}${delimiter}假设99元${delimiter}-1.2%`, data)).toEqual([]);
+      expect(checkNumbers(`${prefix}${delimiter}+1.2%`, data)).toHaveLength(1);
+    }
+  });
   it('情景过滤只用于正文，快照情景字符串仍可提供匹配数值', () => {
     const data: Snapshot = [
       {
