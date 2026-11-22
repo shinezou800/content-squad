@@ -26,6 +26,13 @@ describe('派生数字与完整披露回归', () => {
     }
     expect(checkNumbers('比值2.04', data)).toEqual([]);
   });
+  it('Markdown强调不作为乘法运算符', () => {
+    for (const metric of ['**派息覆盖**', '*派息覆盖*', '__派息覆盖__', '_派息覆盖_']) {
+      expect(checkNumbers(`${metric}0.49`, data)).toEqual([]);
+      expect(checkNumbers(`${metric}4.53`, data)).toHaveLength(1);
+    }
+    expect(checkNumbers('1.49 * 3.04 = 4.53', data)).toEqual([]);
+  });
   it('百分比字段合计不再次乘以一百', () => {
     const percentages: Snapshot = [{ code: '601088', name: '中国神华', fields: [
       { label: '收益率甲', value: 3.2, unit: '%', source: '接口', fetchedAt: '' },

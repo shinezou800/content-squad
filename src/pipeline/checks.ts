@@ -161,7 +161,7 @@ function derivedNumbers(context: string, snapshot: Snapshot) {
     ? 'sum'
     : /差额|之差|相减|差值|减去|[−－]/.test(context)
       ? 'difference'
-      : /乘以|乘积|相乘|[×*]/.test(context)
+      : /乘以|乘积|相乘|×|\d\s*\*\s*[+-]?\d/.test(context)
         ? 'product'
         : /派息覆盖|分红覆盖|覆盖率|派息率|支付率|比率|比值|比例|股息率|收益率|[÷/]/.test(context)
           ? 'ratio'
