@@ -20,6 +20,22 @@ const wrap = (text: string) =>
 const draftA = wrap('攒股记录，现价21.7港元。');
 const draftB = wrap('AI 实测手记，每股分红1.49港元。');
 const responses = ['数据简报甲', draftA, '[]', '数据简报乙', draftB, '[]', '[]'];
+it('golden: mid-zangu-ai finalText and step IDs stay byte-identical', async () => {
+  const run = await runMidPipeline(mid, '选题', settings, () => {});
+  expect(run.steps.map((step) => step.roleId)).toEqual([
+    'zangu-shouxi:data',
+    'zangu-shouxi:draft',
+    'zangu-shouxi:check',
+    'ai-shouji:data',
+    'ai-shouji:draft',
+    'ai-shouji:check',
+    'merge:check',
+  ]);
+  const review = '【规则核对】\n[]\n\n【模型事实核对】\n[]';
+  expect(run.finalText).toBe(
+    `${draftA}\n\n──────── AI手记 ────────\n\n${draftB}\n\n──────── 核对记录 · 发布前请逐项确认 ────────\n【攒股收息段】\n${review}\n\n【AI手记段】\n${review}\n\n【合并全文数字复核】\n${review}`,
+  );
+});
 beforeEach(() => {
   let call = 0;
   vi.mocked(complete).mockImplementation(async () => responses[call++]);

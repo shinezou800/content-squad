@@ -22,6 +22,7 @@ export async function loadSnapshot(settings: Settings): Promise<Snapshot> {
 const squad: Squad = {
   id: 'zangu-shouxi',
   name: '攒股收息内容线',
+  segmentTitle: '攒股收息',
   description: '用数据打底，以记录为先。让每一次表达，都有据可循。',
   pipeline: ['data', 'draft', 'check'],
   roles: [
@@ -70,6 +71,7 @@ const squad: Squad = {
 const aiSquad: Squad = {
   id: 'ai-shouji',
   name: 'AI手记线',
+  segmentTitle: 'AI手记',
   description: '记录 AI 工具与内容流水线的实测过程，不虚构未跑通的步骤。',
   pipeline: ['data', 'draft', 'check'],
   roles: [
@@ -115,4 +117,88 @@ const aiSquad: Squad = {
   template: (ctx) =>
     `${ctx.outputs.draft}\n\n──────── 核对记录 · 发布前请逐项确认 ────────\n${ctx.outputs.check}`,
 };
-export const registry: Record<string, Squad> = { [squad.id]: squad, [aiSquad.id]: aiSquad };
+function bankSquad(id: string, name: string, codes: string[]): Squad {
+  return {
+    id,
+    name,
+    description: `只记录${name}的快照事实。`,
+    pipeline: ['data', 'draft', 'check'],
+    roles: [
+      {
+        id: 'data',
+        name: '小数',
+        title: '数据研究员',
+        async run(ctx) {
+          const entries = poolEntries(ctx.settings.pool);
+          const overrides = Object.fromEntries(
+            entries
+              .filter((entry) => codes.includes(entry.code) && entry.manualDividend !== undefined)
+              .map((entry) => [entry.code, entry.manualDividend!]),
+          );
+          ctx.snapshot = (await fetchSnapshot(codes, overrides)).map((stock) => ({
+            ...stock,
+            category: entries.find((entry) => entry.code === stock.code)?.category ?? '观察池',
+          }));
+          return complete(
+            ctx.settings,
+            `你是小数。只写${name}这${codes.length}家银行（${codes.join('、')}）的简短数据简报。只能使用快照数字，不得猜测、补全或使用记忆数据；缺失明确写缺失。明确报告期、分红口径和来源，保留主人手动提供的来源与币种。`,
+            JSON.stringify({ topic: ctx.topic, snapshot: ctx.snapshot }),
+          );
+        },
+      },
+      {
+        id: 'draft',
+        name: '小稿',
+        title: '内容写作员',
+        run(ctx) {
+          return complete(
+            ctx.settings,
+            `你是小稿。输出可直接发布的${name}独立段正文，只覆盖快照中这${codes.length}家银行，不写其他银行。第一人称记录口吻；开头100字内有⚠️声明并注明「模拟盘记录」；不用建议/应该/补/买等指向读者的词；观察写「观察池记录」；算账写「情景演算、不是买入计划、更不推荐跟风」。最后400字内含「持仓披露：」和「非投资建议。数据来源：」。只能用快照数字，不得虚构未提供的实测步骤。缺失字段不是零，不得填补或使用记忆数据；港元与人民币不得混用或换算。持仓只按快照分类披露，观察池不当作持仓，不推断仓位成本。保留报告期、分红口径及来源。`,
+            JSON.stringify({ topic: ctx.topic, snapshot: ctx.snapshot, brief: ctx.outputs.data }),
+          );
+        },
+      },
+      {
+        id: 'check',
+        name: '小核',
+        title: '事实核对员',
+        async run(ctx) {
+          const result = await complete(
+            ctx.settings,
+            `你是小核。核对${name}正文的数字和事实与快照是否一致，不得涉及其他银行或虚构实测步骤。输出JSON列表，每项字段为原文、问题、数据源值；无问题输出[]。缺失不当作零；主人手动提供的字段也是快照事实，保留来源与币种，不混用港元与人民币。不改写正文。`,
+            JSON.stringify({ draft: ctx.outputs.draft, snapshot: ctx.snapshot }),
+          );
+          return `【规则核对】\n${JSON.stringify(checkDraft(ctx.outputs.draft, ctx.snapshot), null, 2)}\n\n【模型事实核对】\n${result}`;
+        },
+      },
+    ],
+    template: (ctx) =>
+      `${ctx.outputs.draft}\n\n──────── 核对记录 · 发布前请逐项确认 ────────\n${ctx.outputs.check}`,
+  };
+}
+
+export const registry: Record<string, Squad> = Object.fromEntries(
+  [
+    squad,
+    aiSquad,
+    bankSquad('bank-big4', '四大行', ['601398', '601939', '601288', '601988']),
+    bankSquad('bank-joint', '股份制银行', [
+      '600036',
+      '601166',
+      '000001',
+      '601998',
+      '600000',
+      '600016',
+      '601818',
+      '600015',
+    ]),
+    bankSquad('bank-city', '城商银行', [
+      '002142',
+      '600919',
+      '601169',
+      '601229',
+      '601009',
+      '600926',
+    ]),
+  ].map((item) => [item.id, item]),
+);

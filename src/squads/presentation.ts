@@ -18,8 +18,11 @@ export function stepPresentation(id: string) {
   const [prefix, roleId] = id.includes(':') ? id.split(':') : ['', id];
   const order = ['data', 'draft', 'check', 'final'].indexOf(roleId);
   const index = order < 0 ? 0 : order;
-  const role = registry[prefix || 'zangu-shouxi']?.roles?.find((item) => item.id === roleId);
-  const group = prefix === 'zangu-shouxi' ? '攒股收息' : prefix === 'ai-shouji' ? 'AI手记' : prefix;
+  const squad = Object.hasOwn(registry, prefix || 'zangu-shouxi')
+    ? registry[prefix || 'zangu-shouxi']
+    : undefined;
+  const role = squad?.roles.find((item) => item.id === roleId);
+  const group = prefix ? (squad?.segmentTitle ?? squad?.name ?? prefix) : '';
   return {
     id,
     name:

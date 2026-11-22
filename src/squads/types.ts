@@ -10,9 +10,10 @@ export type Role = { id: string; name: string; title: string; run(ctx: Context):
 export type Squad = {
   id: string;
   name: string;
+  segmentTitle?: string;
   description: string;
   roles: Role[];
   pipeline: string[];
   template(ctx: Context): string;
 };
-export type MidSquad = { id: string; name: string; squads: [string, string] };
+export type MidSquad = { id: string; name: string; squads: string[] };

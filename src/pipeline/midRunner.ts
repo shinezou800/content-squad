@@ -12,15 +12,16 @@ export async function runMidPipeline(
   settings: Settings,
   emit: (run: Run) => void,
 ): Promise<Run> {
-  const squads = mid.squads.map((id) => registry[id]);
+  const squads = mid.squads.map((id) => (Object.hasOwn(registry, id) ? registry[id] : undefined));
   if (
     !mid.id ||
-    mid.squads.length !== 2 ||
-    new Set(mid.squads).size !== 2 ||
+    mid.squads.length < 2 ||
+    new Set(mid.squads).size !== mid.squads.length ||
     squads.some(
       (squad, index) =>
         !squad ||
         squad.id !== mid.squads[index] ||
+        squad.pipeline.length !== 3 ||
         new Set(squad.pipeline).size !== squad.pipeline.length ||
         new Set(squad.roles.map((role) => role.id)).size !== squad.roles.length ||
         ['data', 'draft', 'check'].some((id) => !squad.pipeline.includes(id)) ||
@@ -30,9 +31,28 @@ export async function runMidPipeline(
     throw new Error('中团流水线配置无效。');
 
   const contexts: Context[] = squads.map(() => ({ topic, settings, snapshot: [], outputs: {} }));
+  const validSquads = squads.map((squad) => squad!);
+  const title = (index: number) => validSquads[index].segmentTitle ?? validSquads[index].name;
   const mergedBody = () =>
-    `${contexts[0].outputs.draft}\n\n──────── AI手记 ────────\n\n${contexts[1].outputs.draft}`;
-  const jobs = squads.flatMap((squad, index) =>
+    contexts
+      .map(
+        (ctx, index) =>
+          `${index ? `\n\n──────── ${title(index)} ────────\n\n` : ''}${ctx.outputs.draft}`,
+      )
+      .join('');
+  const unionSnapshot = () => {
+    const first = contexts[0].snapshot;
+    if (contexts.every((ctx) => ctx.snapshot === first || !ctx.snapshot.length)) return first;
+    const seen = new Set<string>();
+    return contexts
+      .flatMap((ctx) => ctx.snapshot)
+      .filter((stock) => {
+        if (seen.has(stock.code)) return false;
+        seen.add(stock.code);
+        return true;
+      });
+  };
+  const jobs = validSquads.flatMap((squad, index) =>
     squad.pipeline.map((id) => ({
       roleId: `${squad.id}:${id}`,
       ctx: contexts[index],
@@ -50,20 +70,21 @@ export async function runMidPipeline(
   );
   jobs.push({
     roleId: 'merge:check',
-    ctx: contexts[1],
+    ctx: contexts.at(-1)!,
     input: () => ({
       topic,
-      snapshot: contexts[1].snapshot,
-      outputs: contexts[1].outputs,
+      snapshot: unionSnapshot(),
+      outputs: contexts.at(-1)!.outputs,
       draft: mergedBody(),
     }),
     run: async () => {
       const body = mergedBody();
-      const flags = checkNumbers(body, contexts[1].snapshot);
+      const snapshot = unionSnapshot();
+      const flags = checkNumbers(body, snapshot);
       const result = await complete(
         settings,
         '你是小核 · 合并复核。只核对合并正文中的数字与快照是否一致，保留港元与人民币的区别及主人手动提供的来源。只输出JSON列表，每项字段为原文、问题、数据源值；无问题输出[]。不检查声明或披露的位置，不改写正文，不输出改写文本。',
-        JSON.stringify({ draft: body, snapshot: contexts[1].snapshot }),
+        JSON.stringify({ draft: body, snapshot }),
       );
       return `【规则核对】\n${JSON.stringify(flags, null, 2)}\n\n【模型事实核对】\n${result}`;
     },
@@ -78,18 +99,18 @@ export async function runMidPipeline(
     finalText: '',
     status: 'draft',
   };
-  const publish = (ctx?: Context) => {
-    if (ctx) run.snapshot = ctx.snapshot;
+  const publish = () => {
+    run.snapshot = unionSnapshot();
     emit(structuredClone(run));
   };
   publish();
   for (const [index, job] of jobs.entries()) {
-    job.ctx.snapshot = run.snapshot;
+    if (mid.id === 'mid-zangu-ai') job.ctx.snapshot = run.snapshot;
     const step = run.steps[index];
     step.status = 'running';
     step.startedAt = new Date().toISOString();
     step.input = JSON.stringify(job.input());
-    publish(job.ctx);
+    publish();
     try {
       step.output = await job.run();
       step.status = 'done';
@@ -98,10 +119,10 @@ export async function runMidPipeline(
       step.error = error instanceof Error ? error.message : '运行失败，请重试。';
     }
     step.finishedAt = new Date().toISOString();
-    publish(job.ctx);
+    publish();
     if (step.status === 'failed') return run;
   }
-  run.finalText = `${mergedBody()}\n\n──────── 核对记录 · 发布前请逐项确认 ────────\n【攒股收息段】\n${contexts[0].outputs.check}\n\n【AI手记段】\n${contexts[1].outputs.check}\n\n【合并全文数字复核】\n${run.steps.at(-1)!.output}`;
+  run.finalText = `${mergedBody()}\n\n──────── 核对记录 · 发布前请逐项确认 ────────\n${contexts.map((ctx, index) => `【${title(index)}段】\n${ctx.outputs.check}`).join('\n\n')}\n\n【合并全文数字复核】\n${run.steps.at(-1)!.output}`;
   publish();
   return run;
 }
