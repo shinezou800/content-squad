@@ -1,21 +1,38 @@
 import type { Snapshot } from '../data/market';
 export type Flag = { 原文: string; 问题: string; 数据源值: string };
 const numberPattern =
-  /(?<!\d)((?:(?<![\d元%％亿万千百倍股]\s*)[+-])?\d[\d,]*(?:\.\d+)?)(?:\s*(万亿|亿|万))?(?:\s*(人民币元|人民币|RMB|港元|港币|HKD|元))?/gi;
+  /(?<!\d)((?:(?<![\d元%％亿万千百倍股]\s*)[+-])?\d+(?:,\d{3}(?!\d))*(?:\.\d+)?)(?:\s*(万亿|亿|万))?(?:\s*(人民币元|人民币|RMB|港元|港币|HKD|元))?/gi;
 function stripTimestamps(text: string): string {
   return text
     .replace(
-      /(?<!\d)\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?(?!\d)/g,
+      /(?<!\d)\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:~\d{2})?(?:Z|[+-]\d{2}:?\d{2}|\s*UTC)?(?!\d)/g,
       ' ',
     )
+    .replace(/(?<!\d)\d{4}年\d{1,2}月\d{1,2}日(?:\s*\d{1,2}:\d{2}(?::\d{2})?)?(?!\d)/g, ' ')
     .replace(
       /(?<!\d)(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])(?:[01]\d|2[0-3])[0-5]\d[0-5]\d(?!\d)/g,
       ' ',
     );
 }
-function* numberMatches(text: string, snapshot: Snapshot) {
+function* numberMatches(text: string, snapshot: Snapshot, skipDerived = false) {
   text = stripTimestamps(text);
+  let derivedRangeEnd = 0;
   for (const match of text.matchAll(numberPattern)) {
+    if (
+      skipDerived &&
+      (match.index < derivedRangeEnd ||
+        /(?:中位数|平均|均值|区间|最高|最低)[^\d，。！？；、,.!?;\n]{0,6}$/.test(
+          text.slice(Math.max(0, match.index - 9), match.index),
+        ))
+    ) {
+      const end = match.index + match[0].length;
+      const range =
+        /^(?:\s*(?:倍|[%％]|股))?\s*[–—~～至到-]\s*[+-]?\d+(?:,\d{3}(?!\d))*(?:\.\d+)?/.exec(
+          text.slice(end),
+        );
+      if (range) derivedRangeEnd = end + range[0].length;
+      continue;
+    }
     if (
       /^\d{5,6}$/.test(match[1]) &&
       snapshot.some(
@@ -104,7 +121,7 @@ export function checkNumbers(draft: string, snapshot: Snapshot): Flag[] {
           });
     }
   }
-  for (const m of numberMatches(draft, snapshot)) {
+  for (const m of numberMatches(draft, snapshot, true)) {
     const raw = Number(m[1].replaceAll(',', ''));
     const scale = unitScale(m[2]);
     const digits = Math.min(m[1].split('.')[1]?.length || 0, 2);
