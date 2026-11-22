@@ -22,6 +22,15 @@ function sse(chunks: (string | Uint8Array)[], broken = false) {
   return new Response(body, { headers: { 'Content-Type': 'text/event-stream; charset=utf-8' } });
 }
 function success(text = '完成') { return sse([event(text, 'stop'), 'data: [DONE]\n\n']); }
+it('心跳和 reasoning_content 不进入正文，断流后从已收到正文续写', async () => {
+  const reasoning = 'data: {"choices":[{"delta":{"reasoning_content":"推理内容"}}]}\n\n';
+  const fetcher = vi.fn().mockResolvedValueOnce(sse([': ping\n\n', reasoning, event('已写正文'), ': ping\n\n'], true))
+    .mockResolvedValueOnce(sse([': ping\n\n', event('续写正文', 'stop')]));
+  vi.stubGlobal('fetch', fetcher);
+  expect(await complete(settings, '', '')).toBe('已写正文续写正文');
+  expect(payload(fetcher, 1).messages[2]).toEqual({ role: 'assistant', content: '已写正文' });
+  expect(payload(fetcher, 1).max_tokens).toBe(1024);
+});
 function withoutSseHeader(chunks: string[], broken = false, contentType?: string) {
   return new Response(sse(chunks, broken).body, { headers: contentType ? { 'Content-Type': contentType } : {} });
 }
@@ -105,7 +114,7 @@ it('length 续写带上完整 assistant 正文并拼接最终结果', async () =
   const fetcher = vi.fn().mockResolvedValueOnce(sse([event('第一段', 'length'), 'data: [DONE]\n\n'])).mockResolvedValueOnce(success('第二段'));
   vi.stubGlobal('fetch', fetcher);
   expect(await complete(settings, '规则', '选题')).toBe('第一段第二段');
-  expect(payload(fetcher, 0)).toEqual({ model: settings.model, messages: [{ role: 'system', content: '规则' }, { role: 'user', content: '选题' }], stream: true, max_tokens: 2048 });
+  expect(payload(fetcher, 0)).toEqual({ model: settings.model, messages: [{ role: 'system', content: '规则' }, { role: 'user', content: '选题' }], stream: true, max_tokens: 1024 });
   expect(payload(fetcher, 1).messages).toEqual([
     ...payload(fetcher, 0).messages,
     { role: 'assistant', content: '第一段' },
@@ -196,11 +205,11 @@ it('上游 HTTP 502 保留响应状态和错误详情，不重试或暴露请求
   expect(fetcher).toHaveBeenCalledTimes(1);
 });
 it('转发连接失败耗尽重试时保留最后的状态和诊断', async () => {
-  const fetcher = vi.fn().mockImplementation(() => Response.json({ error: 'No upstream HTTP response' }, {
+  const fetcher = vi.fn().mockImplementation(() => Response.json({ error: 'Upstream unavailable: TypeError: fetch failed' }, {
     status: 502, headers: { 'X-LLM-Proxy-Error': 'upstream-network' },
   }));
   vi.stubGlobal('fetch', fetcher);
-  await expect(complete(settings, '', '')).rejects.toThrow('模型请求失败（502），No upstream HTTP response');
+  await expect(complete(settings, '', '')).rejects.toThrow('模型请求失败（502），Upstream unavailable: TypeError: fetch failed');
   expect(fetcher).toHaveBeenCalledTimes(3);
 });
 it('后续 fetch TypeError 作为中断重试，不误报浏览器 CORS', async () => {

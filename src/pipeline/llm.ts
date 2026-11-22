@@ -3,7 +3,7 @@ import { filterModelCheck } from './checks';
 import { providerRequest, checkProviderStatus, proxyStatusError } from './providerRequest';
 import { readSegment } from './stream';
 
-const proxyMaxTokens = 2048;
+const proxyMaxTokens = 1024;
 const relayRetryStatuses = new Set([502, 504, 546]);
 const radeonThinkingModels = new Set(['glm-5.3-flash', 'qwen3.8-27b']);
 
