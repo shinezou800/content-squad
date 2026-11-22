@@ -5,6 +5,7 @@ import { fetchModels } from './models';
 afterEach(() => vi.unstubAllGlobals());
 it.each([
   ['https://openrouter.ai/api/v1/', ['a:free']],
+  ['https://openrouter.ai:443/api/v1', ['a:free']],
   ['https://example.com/v1///', ['a:free', 'z-paid']],
 ])('API %s 使用正确模型过滤', async (baseUrl, expected) => {
   const fetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [{ id: 'z-paid' }, { id: 'a:free' }] }) });
