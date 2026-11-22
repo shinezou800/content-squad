@@ -26,6 +26,8 @@ async function proxyContent(settings: Settings, system: string, user: string): P
       const segment = await readSegment(response);
       added = segment.text;
       text += added;
+      if (segment.finishReason != null && segment.finishReason !== 'length' && segment.finishReason !== 'stop')
+        throw new Error(`模型提前结束生成（${segment.finishReason}），请调整内容后重试。`);
       if (segment.finishReason !== 'length' && (segment.done || segment.finishReason === 'stop')) return text;
     } else if (response?.body) {
       void response.body.cancel().catch(() => {});

@@ -118,6 +118,14 @@ it('data error 直接报错，不再续写', async () => {
   await expect(complete(settings, '', '')).rejects.toThrow('模型流式返回错误：额度不足');
   expect(fetcher).toHaveBeenCalledTimes(1);
 });
+it.each(['sse', 'json'])('非正常 finish_reason 直接报错，不重试或返回部分正文：%s', async (format) => {
+  const response = format === 'sse' ? sse([event('部分正文', 'content_filter')])
+    : Response.json({ choices: [{ message: { content: '部分正文' }, finish_reason: 'content_filter' }] });
+  const fetcher = vi.fn().mockResolvedValue(response);
+  vi.stubGlobal('fetch', fetcher);
+  await expect(complete(settings, '', '')).rejects.toThrow('模型提前结束生成（content_filter），请调整内容后重试。');
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
 it.each([event('仅 stop', 'stop'), event('仅 DONE') + 'data: [DONE]\n\n'])('正常终止标志足够结束', async (data) => {
   const fetcher = vi.fn().mockResolvedValue(sse([data]));
   vi.stubGlobal('fetch', fetcher);
