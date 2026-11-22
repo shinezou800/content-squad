@@ -93,6 +93,7 @@ function singleModelNumber(text: string) {
   if (suffix && !unit) return;
   if (unit && suffix !== unit) return;
   return {
+    context: text.slice(0, m.index).trim(),
     raw: Number(m[1].replaceAll(',', '')),
     digits: m[1].split('.')[1]?.length || 0,
     scale: unitScale(m[2]),
@@ -108,9 +109,11 @@ export function filterModelCheck(result: string): string {
     if (!Array.isArray(items)) return result;
     const kept = items.filter((item) => {
       if (!item || typeof item.原文 !== 'string' || typeof item.数据源值 !== 'string' || typeof item.问题 !== 'string') return true;
+      if (/来源|口径|出处|手动|接口|单位|币种/.test(item.问题)) return true;
       const draft = singleModelNumber(item.原文);
       const source = singleModelNumber(item.数据源值);
       if (!draft || !source || draft.kind !== source.kind || draft.currency !== source.currency) return true;
+      if (source.context && source.context !== draft.context) return true;
       return !withinNumberTolerance(draft.raw, source.raw * source.scale, draft.digits, draft.scale);
     });
     if (kept.length === items.length) return result;
