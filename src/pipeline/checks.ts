@@ -157,14 +157,14 @@ export function checkDraft(draft: string, snapshot: Snapshot): Flag[] {
 
 function derivedNumbers(context: string, snapshot: Snapshot) {
   const payout = /派息覆盖|分红覆盖|派息率|支付率/.test(context);
-  const operation = /派息覆盖|分红覆盖|覆盖率|派息率|支付率|比率|比值|比例|股息率|收益率|[÷/]/.test(context)
-    ? 'ratio'
-    : /合计|总计|之和|相加|加总|[+＋]/.test(context)
-      ? 'sum'
-      : /差额|之差|相减|差值|减去|[−－]/.test(context)
-        ? 'difference'
-        : /乘以|乘积|相乘|[×*]/.test(context)
-          ? 'product'
+  const operation = /合计|总计|之和|相加|加总|[+＋]/.test(context)
+    ? 'sum'
+    : /差额|之差|相减|差值|减去|[−－]/.test(context)
+      ? 'difference'
+      : /乘以|乘积|相乘|[×*]/.test(context)
+        ? 'product'
+        : /派息覆盖|分红覆盖|覆盖率|派息率|支付率|比率|比值|比例|股息率|收益率|[÷/]/.test(context)
+          ? 'ratio'
           : undefined;
   if (!operation) return [];
   const results: { value: number; currency?: string; ratio?: boolean }[] = [];
