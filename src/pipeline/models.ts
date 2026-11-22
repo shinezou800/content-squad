@@ -1,9 +1,11 @@
 import { defaultBaseUrl, normalizeBaseUrl, type Settings } from '../settings';
 
-export async function fetchModels(settings: Settings): Promise<string[]> {
+export async function fetchModels(settings: Settings, saved: Settings): Promise<string[]> {
   const baseUrl = normalizeBaseUrl(settings.baseUrl);
+  const sendKey = settings.key.trim() &&
+    (baseUrl === normalizeBaseUrl(saved.baseUrl) || settings.key !== saved.key);
   const response = await fetch(`${baseUrl}/models`, {
-    headers: settings.key.trim() ? { Authorization: `Bearer ${settings.key}` } : {},
+    headers: sendKey ? { Authorization: `Bearer ${settings.key}` } : {},
   });
   if (!response.ok) throw new Error('模型列表加载失败');
   const json = await response.json();

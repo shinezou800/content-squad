@@ -167,7 +167,7 @@ function App() {
     setLoadingModels(true);
     setMessage('');
     try {
-      const list = await fetchModels(settings);
+      const list = await fetchModels(settings, loadSettings());
       if (!list.length) throw new Error();
       setModels(list);
       setMessage(`已载入 ${list.length} 个模型。`);
