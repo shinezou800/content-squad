@@ -5,7 +5,6 @@ import {
   currencyOf,
   numberMatches,
   unitScale,
-  withinNumberTolerance,
 } from './checks';
 
 export type CrossFlag = { 原文: string; 问题: string; 依据: string };
@@ -82,9 +81,13 @@ function mentions(draft: string, snapshot: Snapshot): Mention[] {
   return result;
 }
 
-const close = (a: Mention, b: Mention) =>
-  withinNumberTolerance(a.raw, b.raw * b.scale, Math.min(a.digits, b.digits), a.scale) ||
-  withinNumberTolerance(b.raw, a.raw * a.scale, Math.min(a.digits, b.digits), b.scale);
+const rounding = (m: Mention) => (0.5 / 10 ** Math.min(m.digits, 2)) * m.scale;
+const close = (a: Mention, b: Mention) => {
+  const x = a.raw * a.scale;
+  const y = b.raw * b.scale;
+  const epsilon = 4 * Number.EPSILON * Math.max(1, Math.abs(x), Math.abs(y));
+  return Math.abs(x - y) <= rounding(a) + rounding(b) + epsilon;
+};
 
 export function crossConflicts(
   target: string,

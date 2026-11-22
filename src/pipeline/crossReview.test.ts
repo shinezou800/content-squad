@@ -61,6 +61,13 @@ it('同段重复写对的数字不掩盖另一处写错的数字', () => {
   expect(flags.map((f) => f.原文)).toEqual(['复盘时中海油现价22.5港元。']);
 });
 
+it('万与亿混用时按各自精度比对，不放宽容差', () => {
+  const reviewer = wrap('中海油营收15000万元。');
+  expect(crossConflicts(wrap('中海油营收1.23亿元。'), reviewer, snapshot, '甲')).toHaveLength(1);
+  expect(crossConflicts(wrap('中海油营收1.5亿元。'), reviewer, snapshot, '甲')).toEqual([]);
+  expect(crossConflicts(wrap('中海油营收2亿元。'), reviewer, snapshot, '甲')).toEqual([]);
+});
+
 it('一致、四舍五入、不同股票、不同币种或情景演算不算矛盾', () => {
   const reviewer = wrap('中海油现价21.7港元。工商银行现价7.12元。');
   for (const target of [
