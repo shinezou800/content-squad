@@ -46,6 +46,6 @@ it('未登录不发送请求', async () => {
   expect(fetcher).not.toHaveBeenCalled();
 });
 it.each([[401, '密钥无效'], [429, '请求频繁'], [502, '502']])('代理上游错误映射 %s', async (status, error) => {
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status, ok: false }));
+  vi.stubGlobal('fetch', vi.fn().mockImplementation(() => new Response(null, { status })));
   await expect(complete({ ...defaultSettings, useProxy: true, key: 'test-only' }, '', '')).rejects.toThrow(error);
 });
