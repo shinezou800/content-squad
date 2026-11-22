@@ -66,6 +66,9 @@ it('万与亿混用时按各自精度比对，不放宽容差', () => {
   expect(crossConflicts(wrap('中海油营收1.23亿元。'), reviewer, snapshot, '甲')).toHaveLength(1);
   expect(crossConflicts(wrap('中海油营收1.5亿元。'), reviewer, snapshot, '甲')).toEqual([]);
   expect(crossConflicts(wrap('中海油营收2亿元。'), reviewer, snapshot, '甲')).toEqual([]);
+  expect(
+    crossConflicts(wrap('中海油现价21.8港元。'), wrap('中海油现价21.7港元。'), snapshot, '甲'),
+  ).toHaveLength(1);
 });
 
 it('一致、四舍五入、不同股票、不同币种或情景演算不算矛盾', () => {

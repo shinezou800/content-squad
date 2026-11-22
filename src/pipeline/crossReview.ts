@@ -80,7 +80,7 @@ const close = (a: Mention, b: Mention) => {
   const x = a.raw * a.scale;
   const y = b.raw * b.scale;
   const epsilon = 4 * Number.EPSILON * Math.max(1, Math.abs(x), Math.abs(y));
-  return Math.abs(x - y) <= rounding(a) + rounding(b) + epsilon;
+  return Math.abs(x - y) <= Math.max(rounding(a), rounding(b)) + epsilon;
 };
 
 export function crossConflicts(
