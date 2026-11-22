@@ -32,3 +32,17 @@ export function checkProviderStatus(response: Response): void {
   if (response.status === 429) throw new Error('请求频繁或额度已用尽，请稍后重试或更换模型。');
   if (!response.ok) throw new Error(`模型请求失败（${response.status}），请稍后重试。`);
 }
+
+export async function proxyStatusError(response: Response, key: string): Promise<Error> {
+  const body = (await response.text().catch(() => '')).trim();
+  let detail = body;
+  try {
+    const json = JSON.parse(body);
+    detail = [json?.error?.message, json?.error, json?.message]
+      .find((value) => typeof value === 'string' && value.trim()) ?? body;
+  } catch {
+    if (body.startsWith('<')) detail = '';
+  }
+  if (key.trim()) detail = detail.split(key.trim()).join('[已隐藏]');
+  return new Error(`模型请求失败（${response.status}），${detail ? detail.slice(0, 500) : '请稍后重试。'}`);
+}

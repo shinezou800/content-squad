@@ -77,7 +77,7 @@ it('聊天强制 stream:true 并原样传递 SSE 流及状态，不缓冲正文'
   expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({ model: 'test', stream: true });
   expect(response.status).toBe(201);
   expect(response.headers.get('content-type')).toBe('text/event-stream');
-  expect(response.headers.get('access-control-expose-headers')).toBe('content-type');
+  expect(response.headers.get('access-control-expose-headers')).toBe('content-type, x-llm-proxy-error');
   expect(response.body).toBe(upstream.body);
   controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
   controller.close();
@@ -89,10 +89,22 @@ it('禁止来源和非法目标均不转发', async () => {
   expect((await handler(request('user-token', { ...body, baseUrl: 'https://evil.example/v1' }))).status).toBe(403);
   expect(fetcher).not.toHaveBeenCalled();
 });
-it('上游网络失败只返回通用错误', async () => {
+it('上游 HTTP 502 透传原始状态、类型和错误正文', async () => {
+  const { handler, fetcher } = setup();
+  const errorBody = '{"error":{"message":"AMD backend overloaded","code":"upstream_unavailable"}}';
+  fetcher.mockResolvedValue(new Response(errorBody, { status: 502, headers: { 'Content-Type': 'application/problem+json' } }));
+  const response = await handler(request('user-token', { ...body, path: 'chat/completions', payload: { model: 'test' } }));
+  expect(response.status).toBe(502);
+  expect(response.headers.get('x-llm-proxy-error')).toBe('upstream-http');
+  expect(response.headers.get('access-control-expose-headers')).toContain('x-llm-proxy-error');
+  expect(response.headers.get('content-type')).toBe('application/problem+json');
+  expect(await response.text()).toBe(errorBody);
+});
+it('上游网络失败标记为未收到 HTTP 响应，不暴露异常内部信息', async () => {
   const { handler, fetcher } = setup();
   fetcher.mockRejectedValue(new TypeError('private upstream detail'));
   const response = await handler(request());
   expect(response.status).toBe(502);
-  expect(await response.json()).toEqual({ error: 'Upstream unavailable' });
+  expect(response.headers.get('x-llm-proxy-error')).toBe('upstream-network');
+  expect(await response.json()).toEqual({ error: 'Upstream connection failed before an HTTP response' });
 });
