@@ -172,7 +172,7 @@ function App() {
       setModels(list);
       setMessage(`已载入 ${list.length} 个模型。`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : '模型列表加载失败，可直接填写模型名称。');
+      setMessage(error instanceof Error && error.message ? error.message : '模型列表加载失败，可直接填写模型名称。');
     } finally {
       setLoadingModels(false);
     }
