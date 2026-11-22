@@ -38,6 +38,8 @@ export async function readSegment(response: Response): Promise<Segment> {
           try { json = JSON.parse(buffer); }
           catch { throw new Error('模型返回格式无法识别，请稍后重试。'); }
           if (json?.error) throw modelStreamError(json.error);
+          if (!json || typeof json !== 'object' || !Array.isArray(json.choices))
+            throw new Error('模型返回格式无法识别，请稍后重试。');
           const choice = json?.choices?.[0];
           return {
             text: typeof choice?.message?.content === 'string' ? choice.message.content : '',

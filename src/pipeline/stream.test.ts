@@ -38,6 +38,15 @@ it('无 Content-Type 的 JSON 正文回退解析', async () => {
   const json = JSON.stringify({ choices: [{ message: { content: 'JSON正文' }, finish_reason: 'stop' }] });
   expect(await readSegment(withoutSseHeader(['\uFEFF \n', json.slice(0, 5), json.slice(5)]))).toEqual({ text: 'JSON正文', finishReason: 'stop', done: true });
 });
+it.each([null, {}, [], { choices: {} }])('JSON 回退拒绝不含 choices 数组的正文：%j', async (json) => {
+  await expect(readSegment(Response.json(json))).rejects.toThrow('模型返回格式无法识别');
+});
+it('续写收到 null JSON 时不返回截断正文', async () => {
+  const fetcher = vi.fn().mockResolvedValueOnce(sse([event('未完成正文', 'length')])).mockResolvedValueOnce(Response.json(null));
+  vi.stubGlobal('fetch', fetcher);
+  await expect(complete(settings, '', '')).rejects.toThrow('模型返回格式无法识别');
+  expect(fetcher).toHaveBeenCalledTimes(2);
+});
 it.each(['garbage', '', '{invalid json'])('无法识别的正文给出中文错误：%s', async (text) => {
   await expect(readSegment(withoutSseHeader([text]))).rejects.toThrow('模型返回格式无法识别');
 });
