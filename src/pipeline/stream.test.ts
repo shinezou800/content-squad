@@ -65,6 +65,9 @@ it('JSON 正文读取中断也不返回部分成功', async () => {
 it('支持仅 CR 分隔的事件', async () => {
   expect(await readSegment(sse([event('正文', 'stop').replaceAll('\n', '\r')]))).toMatchObject({ text: '正文', finishReason: 'stop' });
 });
+it('已声明 SSE 时保留前导空白，忽略带空格前缀的 data 字段', async () => {
+  expect(await readSegment(sse([' data: [DONE]\n\n', event('正确正文', 'stop')]))).toEqual({ text: '正确正文', finishReason: 'stop', done: false });
+});
 it.each(['stop', 'length', 'content_filter'])('finish_reason=%s 无需等待流关闭，并取消 reader', async (reason) => {
   const cancel = vi.fn();
   const response = new Response(new ReadableStream<Uint8Array>({

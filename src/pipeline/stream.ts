@@ -51,7 +51,7 @@ export async function readSegment(response: Response): Promise<Segment> {
         return segment;
       }
       buffer += decoder.decode(chunk.value, { stream: true });
-      if (!started) {
+      if (!mode && !started) {
         buffer = buffer.trimStart();
         if (!buffer) continue;
         started = true;
