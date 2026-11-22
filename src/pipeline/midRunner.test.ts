@@ -33,7 +33,7 @@ it('golden: mid-zangu-ai finalText and step IDs stay byte-identical', async () =
   ]);
   const review = '【规则核对】\n[]\n\n【模型事实核对】\n[]';
   expect(run.finalText).toBe(
-    `${draftA}\n\n──────── AI手记 ────────\n\n${draftB}\n\n──────── 核对记录 · 发布前请逐项确认 ────────\n【攒股收息段】\n${review}\n\n【AI手记段】\n${review}\n\n【合并全文数字复核】\n${review}`,
+    `──────── 攒股收息 ────────\n\n${draftA}\n\n──────── AI手记 ────────\n\n${draftB}\n\n──────── 核对记录 · 发布前请逐项确认 ────────\n【攒股收息段】\n${review}\n\n【AI手记段】\n${review}\n\n【合并全文数字复核】\n${review}`,
   );
 });
 beforeEach(() => {
@@ -143,7 +143,7 @@ it('任意中团标识均在新小团首步继承前团快照，AI手记复用�
 
 it('正文不改写且依次排列，独立核对及合并核对统一置于正文之后', async () => {
   const run = await runMidPipeline(mid, '选题', settings, () => {});
-  const body = `${draftA}\n\n──────── AI手记 ────────\n\n${draftB}`;
+  const body = `──────── 攒股收息 ────────\n\n${draftA}\n\n──────── AI手记 ────────\n\n${draftB}`;
   expect(run.finalText).toBe(
     `${body}\n\n──────── 核对记录 · 发布前请逐项确认 ────────\n【攒股收息段】\n${run.steps[2].output}\n\n【AI手记段】\n${run.steps[5].output}\n\n【合并全文数字复核】\n${run.steps[6].output}`,
   );

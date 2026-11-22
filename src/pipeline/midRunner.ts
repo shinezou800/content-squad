@@ -1,7 +1,7 @@
 import type { Context, MidSquad } from '../squads/types';
 import type { Settings } from '../settings';
 import type { Run } from '../storage';
-import { registry } from '../squads/registry';
+import { getRegistry } from '../squads/custom';
 import { createRunId } from './runner';
 import { complete } from './llm';
 import { checkNumbers } from './checks';
@@ -12,6 +12,7 @@ export async function runMidPipeline(
   settings: Settings,
   emit: (run: Run) => void,
 ): Promise<Run> {
+  const registry = getRegistry();
   const squads = mid.squads.map((id) => (Object.hasOwn(registry, id) ? registry[id] : undefined));
   if (
     !mid.id ||
@@ -35,11 +36,8 @@ export async function runMidPipeline(
   const title = (index: number) => validSquads[index].segmentTitle ?? validSquads[index].name;
   const mergedBody = () =>
     contexts
-      .map(
-        (ctx, index) =>
-          `${index ? `\n\n──────── ${title(index)} ────────\n\n` : ''}${ctx.outputs.draft}`,
-      )
-      .join('');
+      .map((ctx, index) => `──────── ${title(index)} ────────\n\n${ctx.outputs.draft}`)
+      .join('\n\n');
   const unionSnapshot = () => {
     const first = contexts[0].snapshot;
     if (contexts.every((ctx) => ctx.snapshot === first || !ctx.snapshot.length)) return first;

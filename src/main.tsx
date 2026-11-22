@@ -1,20 +1,24 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { loadSettings, saveSettings, type Settings } from './settings';
-import { registry } from './squads/registry';
-import { midRegistry } from './squads/mid';
+import { registry as builtInRegistry } from './squads/registry';
+import { midRegistry as builtInMids } from './squads/mid';
+import { getRegistry, getMidRegistry, validateMidMembers } from './squads/custom';
 import { isCheckStep, pipelineCards, squadName, stepPresentation } from './squads/presentation';
-import { runMidPipeline } from './pipeline/midRunner';
+import { runContentLine } from './pipeline/selection';
 import { LocalStorageRuns, SupabaseRuns, type Run } from './storage';
 import { supabase } from './storage/supabase';
 import type { User } from '@supabase/supabase-js';
 import { CloudSettings } from './CloudSettings';
-import { hasReachedFinalStep, runPipeline } from './pipeline/runner';
+import { CustomSquadSettings } from './CustomSquadSettings';
+import { hasReachedFinalStep } from './pipeline/runner';
 import { poolCodes } from './data/market';
 import './style.css';
 const localRuns = new LocalStorageRuns();
-const squad = registry['zangu-shouxi'];
 function App() {
+  const [, setRegistryVersion] = useState(0);
+  const registry = getRegistry();
+  const midRegistry = getMidRegistry();
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(!supabase);
   const ownerId = user?.id;
@@ -110,6 +114,12 @@ function App() {
     const runSettings = loadSettings();
     try {
       if (!topic.trim()) throw new Error('先写下这次想聊的选题。');
+      if (!Object.hasOwn(registry, selectedSquad) && !Object.hasOwn(midRegistry, selectedSquad))
+        throw new Error('内容线已删除，请选择有效内容线后运行。');
+      if (Object.hasOwn(midRegistry, selectedSquad)) {
+        const error = validateMidMembers(midRegistry[selectedSquad].squads, registry);
+        if (error) throw new Error(error);
+      }
       if (!runSettings.key.trim()) throw new Error('请先在设置中填写并保存 OpenRouter API 密钥。');
       poolCodes(runSettings.pool);
     } catch (e) {
@@ -123,9 +133,7 @@ function App() {
       const emit = (progress: Run) => {
         if (activeStorage.current === storage) setRun(progress);
       };
-      const next = Object.hasOwn(midRegistry, selectedSquad)
-        ? await runMidPipeline(midRegistry[selectedSquad], topic.trim(), runSettings, emit)
-        : await runPipeline(squad, topic.trim(), runSettings, emit);
+      const next = await runContentLine(selectedSquad, topic.trim(), runSettings, emit);
       if (activeStorage.current !== storage) {
         setMessage('账号状态已变化，本次运行未保存，请在当前账号重新运行。');
         return;
@@ -229,7 +237,13 @@ function App() {
                 <br className="mobile-break" />
                 扎实的记录开始。
               </h1>
-              <p>{squad.description}</p>
+              <p>
+                {Object.hasOwn(registry, selectedSquad)
+                  ? registry[selectedSquad].description
+                  : Object.hasOwn(midRegistry, selectedSquad)
+                    ? '多条内容线依次协作，汇总快照后复核。'
+                    : '内容线已删除，请重新选择。'}
+              </p>
               <span className="tag">{squadName(run?.squadId ?? selectedSquad)}</span>
               <span className="tag muted">固定顺序 · 单次协作</span>
             </section>
@@ -246,11 +260,45 @@ function App() {
                   setRun(undefined);
                 }}
               >
-                <option value="zangu-shouxi">小团：攒股收息内容线</option>
-                {Object.values(midRegistry).map((mid) => (
-                  <option key={mid.id} value={mid.id}>
-                    中团：{mid.name}
-                  </option>
+                {!Object.hasOwn(registry, selectedSquad) &&
+                  !Object.hasOwn(midRegistry, selectedSquad) && (
+                    <option value={selectedSquad} disabled>
+                      未知内容线（已删除，请重新选择）
+                    </option>
+                  )}
+                {[
+                  {
+                    label: '小团',
+                    values: Object.values(registry).filter((s) =>
+                      Object.hasOwn(builtInRegistry, s.id),
+                    ),
+                  },
+                  {
+                    label: '中团',
+                    values: Object.values(midRegistry).filter((s) =>
+                      Object.hasOwn(builtInMids, s.id),
+                    ),
+                  },
+                  {
+                    label: '自定义小团',
+                    values: Object.values(registry).filter(
+                      (s) => !Object.hasOwn(builtInRegistry, s.id),
+                    ),
+                  },
+                  {
+                    label: '自定义中团',
+                    values: Object.values(midRegistry).filter(
+                      (s) => !Object.hasOwn(builtInMids, s.id),
+                    ),
+                  },
+                ].map((group) => (
+                  <optgroup key={group.label} label={group.label}>
+                    {group.values.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {group.label}：{s.name}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
               <div className="section-heading">
@@ -400,7 +448,9 @@ function App() {
                   .filter((s) => s.output)
                   .map((step) => (
                     <details className="panel" key={step.roleId} open={isCheckStep(step.roleId)}>
-                      <summary>{stepPresentation(step.roleId).name} · 工作记录</summary>
+                      <summary>
+                        {stepPresentation(step.roleId, run.squadId).name} · 工作记录
+                      </summary>
                       <pre className={isCheckStep(step.roleId) ? 'review' : ''}>{step.output}</pre>
                     </details>
                   ))}
@@ -568,6 +618,10 @@ function App() {
                 保存本地设置
               </button>
             </form>
+            <CustomSquadSettings
+              disabled={busy}
+              onChange={() => setRegistryVersion((value) => value + 1)}
+            />
             <CloudSettings user={user} disabled={busy || !authReady} />
           </>
         )}
@@ -593,9 +647,7 @@ function App() {
                   onClick={() => {
                     setRun(item);
                     setTopic(item.topic);
-                    setSelectedSquad(
-                      Object.hasOwn(midRegistry, item.squadId) ? item.squadId : 'zangu-shouxi',
-                    );
+                    setSelectedSquad(item.squadId);
                     setPage('work');
                   }}
                 >
