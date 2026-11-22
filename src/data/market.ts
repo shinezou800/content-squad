@@ -6,7 +6,12 @@ export type Field = {
   fetchedAt: string;
 };
 export type PoolCategory = '持仓' | '观察池';
-export type Snapshot = { code: string; name: string; category?: PoolCategory; fields: Field[] }[];
+export type Snapshot = {
+  code: string;
+  name: string;
+  category?: PoolCategory | '未持有';
+  fields: Field[];
+}[];
 export const legacyDefaultPool =
   '601088 中国神华\n600900 长江电力\n600036 招商银行\n601398 工商银行\n601939 建设银行\n601288 农业银行\n601988 中国银行\n601857 中国石油\n600941 中国移动\n601006 大秦铁路\n000895 双汇发展\n000651 格力电器\n000333 美的集团\n600028 中国石化';
 export const previousDefaultPool = [

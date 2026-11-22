@@ -137,7 +137,8 @@ function bankSquad(id: string, name: string, codes: string[]): Squad {
           );
           ctx.snapshot = (await fetchSnapshot(codes, overrides)).map((stock) => ({
             ...stock,
-            category: entries.find((entry) => entry.code === stock.code)?.category ?? '观察池',
+            category:
+              entries.find((entry) => entry.code === stock.code)?.category ?? ('未持有' as const),
           }));
           return complete(
             ctx.settings,
@@ -153,7 +154,7 @@ function bankSquad(id: string, name: string, codes: string[]): Squad {
         run(ctx) {
           return complete(
             ctx.settings,
-            `你是小稿。输出可直接发布的${name}独立段正文，只覆盖快照中这${codes.length}家银行，不写其他银行。第一人称记录口吻；开头100字内有⚠️声明并注明「模拟盘记录」；不用建议/应该/补/买等指向读者的词；观察写「观察池记录」；算账写「情景演算、不是买入计划、更不推荐跟风」。最后400字内含「持仓披露：」和「非投资建议。数据来源：」。只能用快照数字，不得虚构未提供的实测步骤。缺失字段不是零，不得填补或使用记忆数据；港元与人民币不得混用或换算。持仓只按快照分类披露，观察池不当作持仓，不推断仓位成本。保留报告期、分红口径及来源。`,
+            `你是小稿。输出可直接发布的${name}独立段正文，只覆盖快照中这${codes.length}家银行，不写其他银行。第一人称记录口吻；开头100字内有⚠️声明并注明「模拟盘记录」；不用建议/应该/补/买等指向读者的词；观察写「观察池记录」；算账写「情景演算、不是买入计划、更不推荐跟风」。最后400字内含「持仓披露：」和「非投资建议。数据来源：」。只能用快照数字，不得虚构未提供的实测步骤。缺失字段不是零，不得填补或使用记忆数据；港元与人民币不得混用或换算。持仓只按快照分类披露，观察池不当作持仓；未持有股票既不是持仓，也不是主人的观察池，不得称作观察池记录；不推断仓位成本。保留报告期、分红口径及来源。`,
             JSON.stringify({ topic: ctx.topic, snapshot: ctx.snapshot, brief: ctx.outputs.data }),
           );
         },

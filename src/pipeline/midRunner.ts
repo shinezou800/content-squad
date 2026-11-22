@@ -105,7 +105,9 @@ export async function runMidPipeline(
   };
   publish();
   for (const [index, job] of jobs.entries()) {
-    if (mid.id === 'mid-zangu-ai') job.ctx.snapshot = run.snapshot;
+    const previousContext = jobs[index - 1]?.ctx;
+    if (previousContext && previousContext !== job.ctx && !job.ctx.snapshot.length)
+      job.ctx.snapshot = previousContext.snapshot;
     const step = run.steps[index];
     step.status = 'running';
     step.startedAt = new Date().toISOString();

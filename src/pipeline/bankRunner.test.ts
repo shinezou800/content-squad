@@ -16,7 +16,7 @@ const titles = ['四大行', '股份制银行', '城商银行'];
 const settings = {
   key: 'test-key',
   model: 'mock',
-  pool: '601398 工商银行 持仓 分红TTM=2.5元\n00883 中海油 观察池 分红TTM=1.49港元',
+  pool: '601398 工商银行 持仓 分红TTM=2.5元\n601939 建设银行 观察池\n00883 中海油 观察池 分红TTM=1.49港元',
 };
 const drafts = titles.map(
   (title, index) =>
@@ -93,11 +93,19 @@ it('银行中团十步顺序执行、三段合并、独立取数并使用全部�
   for (const [index, group] of codes.entries()) {
     const snapshot = JSON.parse(run.steps[index * 3 + 1].input!).snapshot;
     expect(snapshot.map((stock: { code: string }) => stock.code)).toEqual(group);
-    expect(JSON.parse(vi.mocked(complete).mock.calls[index * 3][2]).snapshot).toEqual(snapshot);
+    for (const offset of [1, 2]) {
+      expect(JSON.parse(run.steps[index * 3 + offset].input!).snapshot).toEqual(snapshot);
+    }
+    for (const offset of [0, 1, 2]) {
+      expect(JSON.parse(vi.mocked(complete).mock.calls[index * 3 + offset][2]).snapshot).toEqual(
+        snapshot,
+      );
+    }
   }
   expect(run.snapshot).toHaveLength(codes.flat().length);
   expect(run.snapshot[0]).toMatchObject({ code: '601398', category: '持仓' });
-  expect(run.snapshot.slice(1).every((stock) => stock.category === '观察池')).toBe(true);
+  expect(run.snapshot[1]).toMatchObject({ code: '601939', category: '观察池' });
+  expect(run.snapshot.slice(2).every((stock) => stock.category === '未持有')).toBe(true);
   expect(run.snapshot[0].fields.find((field) => field.source === '主人手动提供')).toMatchObject({
     value: 2.5,
     unit: '元',
@@ -197,6 +205,7 @@ it.each(mid.squads)('银行提示词约束段范围、快照事实和持仓分�
     '港元与人民币不得混用或换算',
     '缺失字段不是零',
     '观察池不当作持仓',
+    '未持有股票既不是持仓，也不是主人的观察池，不得称作观察池记录',
   ])
     expect(prompt).toContain(rule);
 });

@@ -132,6 +132,15 @@ it('中团配置按顺序注册，角色生命周期完整，快照仅抓取一�
   expect(JSON.stringify(run)).not.toContain('private-key');
 });
 
+it('任意中团标识均在新小团首步继承前团快照，AI手记复用而非重新抓取', async () => {
+  const run = await runMidPipeline({ ...mid, id: 'another-mid' }, '选题', settings, () => {});
+  expect(run.steps.every((step) => step.status === 'done')).toBe(true);
+  expect(JSON.parse(run.steps[3].input!).snapshot).toEqual(run.snapshot);
+  expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes('gtimg'))).toHaveLength(
+    1,
+  );
+});
+
 it('正文不改写且依次排列，独立核对及合并核对统一置于正文之后', async () => {
   const run = await runMidPipeline(mid, '选题', settings, () => {});
   const body = `${draftA}\n\n──────── AI手记 ────────\n\n${draftB}`;
