@@ -214,6 +214,14 @@ textarea::placeholder {
   gap: 14px;
   margin-top: 16px;
 }
+.squad-label {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 7px;
+}
+#squad-choice {
+  margin-bottom: 20px;
+}
 .primary,
 .secondary {
   border: 1px solid #244f3f;

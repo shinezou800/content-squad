@@ -49,7 +49,7 @@ API 密钥只保存在当前浏览器的 localStorage，不硬编码、不记录
 
 ## 架构扩展点
 
-- `src/squads/types.ts`：Role、Squad，保留双 squad 标识元组的 MidSquad 类型，未实现中团组合。
+- `src/squads/types.ts`：Role、Squad 与 MidSquad。工作台可选择小团，或「攒股收息 × AI手记」中团：先攒股收息三步，再 AI手记三步，最后合并数字复核。两团共享已保存设置与同一份快照，仅首次取数；各自简报、正文及核对独立。合并时攒股正文在前、AI手记正文在后，以分隔线连接，保留各段声明和披露，核对记录统一附在文末。切换内容线会收起当前稿件（已保存历史不变）；刷新默认选择小团。
 - `src/squads/registry.ts`：注册 `zangu-shouxi`，新增小团可复用流水线。
 - `src/pipeline/runner.ts`：通用顺序运行器，单步状态/输入/输出/错误/时间与进度回调，输入不含密钥。
 - `src/storage/index.ts`：RunStorage 接口、LocalStorageRuns 与 SupabaseRuns 实现。云端按用户过滤、创建时间倒序读取，以运行 id 执行 upsert。设置独立于作品存储，不同步模型密钥。
