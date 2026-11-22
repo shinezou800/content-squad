@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkDraft } from './checks';
+import { checkDraft, checkNumbers } from './checks';
 import type { Snapshot } from '../data/market';
 const snapshot: Snapshot = [
   {
@@ -15,6 +15,104 @@ const snapshot: Snapshot = [
 const wrap = (text: string) =>
   `⚠️ 模拟盘记录。${text}\n持仓披露：未提供。\n非投资建议。数据来源：腾讯行情、东方财富。`;
 describe('确定性核对', () => {
+  const timestamps = [
+    '2026-11-22T01:20:06Z',
+    '2026-11-22T01:20:06',
+    '2026-11-22T01:20:06.123Z',
+    '2026-11-22T01:20:06.123',
+    '2026-11-22T01:20:06+08:00',
+    '2026-11-20 16:14:47',
+    '20261120161430',
+  ];
+  it.each(timestamps)('正文时间戳不拆成数字片段：%s', (timestamp) => {
+    expect(checkNumbers(`行情时间：${timestamp}。`, [])).toEqual([]);
+    expect(checkDraft(wrap(`行情时间：${timestamp}。`), [])).toEqual([]);
+    expect(checkNumbers(`${timestamp}；现价999元`, []).map((flag) => flag.原文)).toEqual(['999']);
+  });
+  it('快照时间戳不提供可匹配的数字片段或紧凑时间值，其他数值仍匹配', () => {
+    const data: Snapshot = [
+      {
+        code: '601398',
+        name: '工商银行',
+        fields: [
+          ...[...timestamps, 20261120161430].map((value) => ({
+            label: '时间',
+            value,
+            source: '腾讯',
+            fetchedAt: '',
+          })),
+          {
+            label: '行情',
+            value: '2026-11-20 16:14:47；现价4.54元',
+            source: '腾讯',
+            fetchedAt: '',
+          },
+        ],
+      },
+    ];
+    expect(checkNumbers('4.54元', data)).toEqual([]);
+    expect(checkNumbers('11、22、20、06、20261120161431', data).map((flag) => flag.原文)).toEqual([
+      '11',
+      '22',
+      '20',
+      '06',
+    ]);
+    expect(checkNumbers('2026年3季报', []).map((flag) => flag.原文)).toEqual(['2026', '3']);
+  });
+  it.each([
+    ['4.54%', 4.540295119182747, '%', '4.55%'],
+    ['760.79亿', 760.78709, '亿元', '760.78亿'],
+    ['760.79亿元', 76078709000, '元', '760.78亿元'],
+    ['4.544%', 4.5402, '%', '4.546%'],
+    ['-1.23%', -1.234, '%', '-1.24%'],
+    ['5元', 4.5402, '元', '4元'],
+  ])('按正文精度四舍五入，最多两位小数：%s', (text, value, unit, wrong) => {
+    const data: Snapshot = [
+      {
+        code: '601398',
+        name: '工商银行',
+        fields: [{ label: '数值', value, unit, source: '测试', fetchedAt: '' }],
+      },
+    ];
+    expect(checkNumbers(text, data)).toEqual([]);
+    expect(checkDraft(wrap(text), data)).toEqual([]);
+    expect(checkNumbers(wrong, data)).toHaveLength(1);
+  });
+  it('四舍五入边界不能以近似差值跨越', () => {
+    const data: Snapshot = [
+      {
+        code: '601398',
+        name: '工商银行',
+        fields: [{ label: '数值', value: 4.5451, unit: '%', source: '测试', fetchedAt: '' }],
+      },
+    ];
+    expect(checkNumbers('4.54%', data)).toHaveLength(1);
+    expect(checkNumbers('4.55%', data)).toEqual([]);
+  });
+  it.each([
+    '未做任何补全或推算',
+    '未补仓',
+    '不补仓',
+    '没有进行补仓',
+    '无补仓操作',
+    '数据补全',
+    '资料补充',
+    '收到补贴',
+    '政府补助',
+    '可以补充资料',
+    '补录数据',
+  ])('补的否定及非行动用法不误报：%s', (text) => {
+    expect(checkDraft(wrap(text), [])).toEqual([]);
+  });
+  it.each(['补仓', '补一点', '可以补', '该补', '可以补买'])('补的行动用法仍标记：%s', (text) => {
+    expect(checkDraft(wrap(text), []).some((flag) => flag.原文 === '补')).toBe(true);
+  });
+  it('否定仅作用于当前分句，其他禁词规则不变', () => {
+    const flags = checkDraft(wrap('未做任何补全，可以补仓。建议买，应该补一点。'), []);
+    expect(flags.filter((flag) => flag.原文 === '补')).toHaveLength(2);
+    for (const word of ['建议', '买', '应该'])
+      expect(flags.some((flag) => flag.原文 === word)).toBe(true);
+  });
   it.each([
     ['600309', '万华化学'],
     ['000002', '万科'],

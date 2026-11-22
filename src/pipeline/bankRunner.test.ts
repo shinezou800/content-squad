@@ -117,12 +117,12 @@ it('银行中团十步顺序执行、三段合并、独立取数并使用全部�
         ([url]) => String(url).includes('RPT_SHAREBONUS_DET') && String(url).includes('601398'),
       ),
   ).toBe(false);
-  const body = `${drafts[0]}\n\n──────── 股份制银行 ────────\n\n${drafts[1]}\n\n──────── 城商银行 ────────\n\n${drafts[2]}`;
+  const body = `──────── 四大行 ────────\n\n${drafts[0]}\n\n──────── 股份制银行 ────────\n\n${drafts[1]}\n\n──────── 城商银行 ────────\n\n${drafts[2]}`;
   const review = '【规则核对】\n[]\n\n【模型事实核对】\n[]';
   expect(run.finalText).toBe(
     `${body}\n\n──────── 核对记录 · 发布前请逐项确认 ────────\n${titles.map((title) => `【${title}段】\n${review}`).join('\n\n')}\n\n【合并全文数字复核】\n${review}`,
   );
-  expect(body.match(/──────── .* ────────/g)).toHaveLength(2);
+  expect(body.match(/──────── .* ────────/g)).toHaveLength(3);
   expect(run.steps.at(-1)!.output).toBe(review);
   expect(JSON.parse(vi.mocked(complete).mock.calls.at(-1)![2])).toEqual({
     draft: body,

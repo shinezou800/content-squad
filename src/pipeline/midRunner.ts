@@ -35,11 +35,8 @@ export async function runMidPipeline(
   const title = (index: number) => validSquads[index].segmentTitle ?? validSquads[index].name;
   const mergedBody = () =>
     contexts
-      .map(
-        (ctx, index) =>
-          `${index ? `\n\n──────── ${title(index)} ────────\n\n` : ''}${ctx.outputs.draft}`,
-      )
-      .join('');
+      .map((ctx, index) => `──────── ${title(index)} ────────\n\n${ctx.outputs.draft}`)
+      .join('\n\n');
   const unionSnapshot = () => {
     const first = contexts[0].snapshot;
     if (contexts.every((ctx) => ctx.snapshot === first || !ctx.snapshot.length)) return first;
