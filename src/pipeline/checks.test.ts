@@ -26,6 +26,14 @@ describe('派生数字与完整披露回归', () => {
     }
     expect(checkNumbers('比值2.04', data)).toEqual([]);
   });
+  it('百分比字段合计不再次乘以一百', () => {
+    const percentages: Snapshot = [{ code: '601088', name: '中国神华', fields: [
+      { label: '收益率甲', value: 3.2, unit: '%', source: '接口', fetchedAt: '' },
+      { label: '收益率乙', value: 5.4, unit: '%', source: '接口', fetchedAt: '' },
+    ] }];
+    expect(checkNumbers('合计8.60%', percentages)).toEqual([]);
+    expect(checkNumbers('合计860%', percentages)).toHaveLength(1);
+  });
   it.each([0.93, 0.98, 0.59, 0.69, 0.44, 0.28, 0.49])('允许分红除以EPS得到的派息覆盖 %s', (ratio) => {
     const stock = structuredClone(data);
     stock[0].fields[0].value = ratio * 3.04;

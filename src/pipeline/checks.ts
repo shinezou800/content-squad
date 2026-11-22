@@ -167,7 +167,7 @@ function derivedNumbers(context: string, snapshot: Snapshot) {
           ? 'product'
           : undefined;
   if (!operation) return [];
-  const results: { value: number; currency?: string }[] = [];
+  const results: { value: number; currency?: string; ratio?: boolean }[] = [];
   for (const stock of snapshot) {
     const fields = stock.fields.flatMap((field) => {
       const parsed = typeof field.value === 'number' ? undefined : singleModelNumber(field.value);
@@ -182,7 +182,7 @@ function derivedNumbers(context: string, snapshot: Snapshot) {
         if (a.currency && b.currency && a.currency !== b.currency) continue;
         if (operation === 'ratio') {
           if (payout && !/分红|派息|股息/.test(a.label)) continue;
-          if (b.value !== 0) results.push({ value: a.value / b.value, currency: 'non-monetary' });
+          if (b.value !== 0) results.push({ value: a.value / b.value, currency: 'non-monetary', ratio: true });
         } else {
           const value = operation === 'sum' ? a.value + b.value : operation === 'difference' ? a.value - b.value : a.value * b.value;
           results.push({ value, currency: a.currency ?? b.currency });
@@ -233,7 +233,7 @@ export function checkNumbers(draft: string, snapshot: Snapshot): Flag[] {
     const percent = /^\s*[%％]/.test(m.input.slice(m.index + m[0].length));
     const derived = derivedNumbers(context, snapshot).some((v) =>
       (!currency || !v.currency || currency === v.currency) &&
-      withinNumberTolerance(raw, v.value * (percent && v.currency === 'non-monetary' ? 100 : 1), digits, scale),
+      withinNumberTolerance(raw, v.value * (percent && v.ratio ? 100 : 1), digits, scale),
     );
     if (
       !derived &&
