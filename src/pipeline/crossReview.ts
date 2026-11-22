@@ -1,11 +1,5 @@
 import type { Snapshot } from '../data/market';
-import {
-  checkDraft,
-  checkNumbers,
-  currencyOf,
-  numberMatches,
-  unitScale,
-} from './checks';
+import { checkDraft, checkNumbers, currencyOf, numberMatches, unitScale } from './checks';
 
 export type CrossFlag = { 原文: string; 问题: string; 依据: string };
 export type CrossItem = CrossFlag & { 改为?: string };
@@ -193,7 +187,14 @@ export function applyCrossReview(options: {
       keep(item, '改后会破坏开篇声明、结尾披露或用词规则');
       continue;
     }
-    if (checkNumbers(next, snapshot).length > checkNumbers(draft, snapshot).length) {
+    const unsupported = (text: string) => {
+      const counts = new Map<string, number>();
+      for (const flag of checkNumbers(text, snapshot))
+        counts.set(flag.原文, (counts.get(flag.原文) ?? 0) + 1);
+      return counts;
+    };
+    const unsupportedBefore = unsupported(draft);
+    if ([...unsupported(next)].some(([key, count]) => count > (unsupportedBefore.get(key) ?? 0))) {
       keep(item, '改后出现快照外数字');
       continue;
     }
