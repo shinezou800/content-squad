@@ -60,7 +60,7 @@ export async function readSegment(response: Response): Promise<Segment> {
         if (!line) dispatch();
         else if (line === 'data') data.push('');
         else if (line.startsWith('data:')) data.push(line.slice(5).replace(/^ /, ''));
-        if (segment.done) return segment;
+        if (segment.done || segment.finishReason !== undefined) return segment;
       }
     }
   } finally {

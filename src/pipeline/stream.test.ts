@@ -25,6 +25,15 @@ function success(text = '完成') { return sse([event(text, 'stop'), 'data: [DON
 it('支持仅 CR 分隔的事件', async () => {
   expect(await readSegment(sse([event('正文', 'stop').replaceAll('\n', '\r')]))).toMatchObject({ text: '正文', finishReason: 'stop' });
 });
+it.each(['stop', 'length', 'content_filter'])('finish_reason=%s 无需等待流关闭，并取消 reader', async (reason) => {
+  const cancel = vi.fn();
+  const response = new Response(new ReadableStream<Uint8Array>({
+    start(controller) { controller.enqueue(encoder.encode(event('保留正文', reason))); },
+    cancel,
+  }), { headers: { 'Content-Type': 'text/event-stream' } });
+  expect(await readSegment(response)).toEqual({ text: '保留正文', finishReason: reason, done: false });
+  expect(cancel).toHaveBeenCalledTimes(1);
+});
 it('多个 data 行按换行合并，在空行或 EOF 派发事件', async () => {
   const data = 'data: {"choices":\r\ndata: [{"delta":{"content":"正文"}}]}\r\n';
   expect(await readSegment(sse([data, '\r\n', 'data: [DONE]\n\n']))).toMatchObject({ text: '正文', done: true });
