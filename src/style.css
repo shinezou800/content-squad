@@ -219,6 +219,32 @@ textarea::placeholder {
   font-size: 12px;
   margin-bottom: 7px;
 }
+.custom-manager fieldset {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+.custom-manager .actions {
+  flex-wrap: wrap;
+}
+.custom-list {
+  list-style: none;
+  padding: 0;
+}
+.custom-list li {
+  margin: 14px 0;
+  overflow-wrap: anywhere;
+}
+.custom-manager .line-choice {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.custom-manager .line-choice input {
+  width: auto;
+  flex: none;
+  margin-top: 4px;
+}
 #squad-choice {
   margin-bottom: 20px;
 }
