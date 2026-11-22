@@ -112,9 +112,14 @@ export function checkNumbers(draft: string, snapshot: Snapshot): Flag[] {
     const currency = currencyOf(m[3]);
     if (
       !values.some(
-        (v) =>
-          (!currency || !v.currency || currency === v.currency) &&
-          Math.round((v.value / scale) * precision) === Math.round(raw * precision),
+        (v) => {
+          const value = v.value / scale;
+          const epsilon = 1e-9 * Math.max(1, Math.abs(value), Math.abs(raw));
+          return (
+            (!currency || !v.currency || currency === v.currency) &&
+            Math.abs(value - raw) <= 0.5 / precision + epsilon
+          );
+        },
       )
     )
       add(

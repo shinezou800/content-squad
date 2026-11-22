@@ -90,6 +90,22 @@ describe('确定性核对', () => {
     expect(checkNumbers('4.55%', data)).toEqual([]);
   });
   it.each([
+    ['1.01%', 1.005, '1.02%'],
+    ['-1.13%', -1.125, '-1.14%'],
+    ['-1.12%', -1.125, '-1.11%'],
+  ])('对称半单位容差接受临界两侧（含负数），越界仍标记：%s', (text, value, wrong) => {
+    const data: Snapshot = [
+      {
+        code: '601398',
+        name: '工商银行',
+        fields: [{ label: '数值', value, unit: '%', source: '测试', fetchedAt: '' }],
+      },
+    ];
+    expect(checkNumbers(text, data)).toEqual([]);
+    expect(checkDraft(wrap(text), data)).toEqual([]);
+    expect(checkNumbers(wrong, data)).toHaveLength(1);
+  });
+  it.each([
     '未做任何补全或推算',
     '未补仓',
     '不补仓',
