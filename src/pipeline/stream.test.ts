@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { defaultSettings } from '../settings';
 import { complete } from './llm';
+import { readSegment } from './stream';
 
 vi.mock('../storage/supabase', () => ({ supabase: { auth: { getSession: async () => ({ data: { session: { access_token: 'session-test' } } }) } } }));
 const settings = { ...defaultSettings, key: 'test-only', useProxy: true };
@@ -21,6 +22,17 @@ function sse(chunks: (string | Uint8Array)[], broken = false) {
   return new Response(body, { headers: { 'Content-Type': 'text/event-stream; charset=utf-8' } });
 }
 function success(text = '完成') { return sse([event(text, 'stop'), 'data: [DONE]\n\n']); }
+it('支持仅 CR 分隔的事件', async () => {
+  expect(await readSegment(sse([event('正文', 'stop').replaceAll('\n', '\r')]))).toMatchObject({ text: '正文', finishReason: 'stop' });
+});
+it('多个 data 行按换行合并，在空行或 EOF 派发事件', async () => {
+  const data = 'data: {"choices":\r\ndata: [{"delta":{"content":"正文"}}]}\r\n';
+  expect(await readSegment(sse([data, '\r\n', 'data: [DONE]\n\n']))).toMatchObject({ text: '正文', done: true });
+  expect(await readSegment(sse([data]))).toMatchObject({ text: '正文' });
+});
+it('CRLF 跨 chunk 时不提前派发多行事件', async () => {
+  expect(await readSegment(sse(['data: {"choices":\r', '\ndata: [{"delta":{"content":"正文"}}]}\r', '\n\r', '\n']))).toMatchObject({ text: '正文' });
+});
 function payload(fetcher: ReturnType<typeof vi.fn>, index: number) { return JSON.parse(fetcher.mock.calls[index][1].body).payload; }
 beforeEach(() => {
   vi.stubEnv('VITE_SUPABASE_URL', 'https://tvxmlknddhwykgzxrvhl.supabase.co');
