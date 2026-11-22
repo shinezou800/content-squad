@@ -10,6 +10,7 @@ import type { Run } from '../storage';
 
 vi.mock('./llm', () => ({ complete: vi.fn() }));
 const settings = {
+  baseUrl: 'https://example.com/v1',
   key: 'private-key',
   model: 'test-model',
   pool: '00883 中海油 观察池 分红TTM=1.49港元',

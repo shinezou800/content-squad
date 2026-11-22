@@ -47,6 +47,7 @@ const line = {
 };
 const mid = { id: 'custom-mid-100', name: '白酒联合记录', squads: [line.id, 'zangu-shouxi'] };
 const settings = {
+  baseUrl: 'https://example.com/v1',
   key: 'mock',
   model: 'mock',
   pool: '600519 贵州茅台 持仓 分红TTM=1.5元\n00883 中海油 观察池 分红TTM=1.49港元',

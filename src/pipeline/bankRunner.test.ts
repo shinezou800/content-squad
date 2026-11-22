@@ -14,6 +14,7 @@ const codes = [
 ];
 const titles = ['四大行', '股份制银行', '城商银行'];
 const settings = {
+  baseUrl: 'https://example.com/v1',
   key: 'test-key',
   model: 'mock',
   pool: '601398 工商银行 持仓 分红TTM=2.5元\n601939 建设银行 观察池\n00883 中海油 观察池 分红TTM=1.49港元',

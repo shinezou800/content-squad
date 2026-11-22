@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { hasReachedFinalStep, runPipeline } from './runner';
 import type { Squad } from '../squads/types';
 import type { Run } from '../storage';
-const settings = { key: 'private-key', model: 'test', pool: '' };
+const settings = { baseUrl: 'https://example.com/v1', key: 'private-key', model: 'test', pool: '' };
 afterEach(() => vi.unstubAllGlobals());
 
 it('到达成稿后清空正文仍可审稿，未完成或失败的运行不可审稿', () => {
