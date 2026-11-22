@@ -156,6 +156,7 @@ export function checkDraft(draft: string, snapshot: Snapshot): Flag[] {
 }
 
 function derivedNumbers(context: string, snapshot: Snapshot) {
+  const payout = /派息覆盖|分红覆盖|派息率|支付率/.test(context);
   const operation = /派息覆盖|分红覆盖|覆盖率|派息率|支付率|比率|比值|比例|股息率|收益率|[÷/]/.test(context)
     ? 'ratio'
     : /合计|总计|之和|相加|加总|[+＋]/.test(context)
@@ -172,7 +173,7 @@ function derivedNumbers(context: string, snapshot: Snapshot) {
       const parsed = typeof field.value === 'number' ? undefined : singleModelNumber(field.value);
       const value = typeof field.value === 'number' ? field.value : parsed && !parsed.context ? parsed.raw : undefined;
       if (value === undefined || !Number.isFinite(value) || /日期|时间|报告期|代码|年份/.test(field.label)) return [];
-      return [{ value: value * (parsed && parsed.kind !== 'bare' ? parsed.scale : unitScale(field.unit)), currency: parsed?.currency ?? currencyOf(field.unit) }];
+      return [{ label: field.label, value: value * (parsed && parsed.kind !== 'bare' ? parsed.scale : unitScale(field.unit)), currency: parsed?.currency ?? currencyOf(field.unit) }];
     });
     for (let i = 0; i < fields.length; i++) {
       for (let j = 0; j < fields.length; j++) {
@@ -180,6 +181,7 @@ function derivedNumbers(context: string, snapshot: Snapshot) {
         const a = fields[i], b = fields[j];
         if (a.currency && b.currency && a.currency !== b.currency) continue;
         if (operation === 'ratio') {
+          if (payout && !/分红|派息|股息/.test(a.label)) continue;
           if (b.value !== 0) results.push({ value: a.value / b.value, currency: 'non-monetary' });
         } else {
           const value = operation === 'sum' ? a.value + b.value : operation === 'difference' ? a.value - b.value : a.value * b.value;

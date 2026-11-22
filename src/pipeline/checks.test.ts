@@ -19,6 +19,13 @@ describe('派生数字与完整披露回归', () => {
     { label: '每股分红', value: 1.49, unit: '元', source: '手动', fetchedAt: '' },
     { label: '每股收益', value: 3.04, unit: '元', source: '接口', fetchedAt: '' },
   ] }];
+  it('派息指标只接受分红作分子，通用比值保留双向运算', () => {
+    for (const metric of ['派息覆盖', '分红覆盖', '派息率', '支付率']) {
+      expect(checkNumbers(`${metric}2.04`, data)).toHaveLength(1);
+      expect(checkNumbers(`${metric}0.49`, data)).toEqual([]);
+    }
+    expect(checkNumbers('比值2.04', data)).toEqual([]);
+  });
   it.each([0.93, 0.98, 0.59, 0.69, 0.44, 0.28, 0.49])('允许分红除以EPS得到的派息覆盖 %s', (ratio) => {
     const stock = structuredClone(data);
     stock[0].fields[0].value = ratio * 3.04;
