@@ -16,6 +16,21 @@ beforeEach(() => {
   });
 });
 afterEach(() => vi.unstubAllGlobals());
+it('默认 API 地址及旧设置兼容，保留密钥模型与自定义池', () => {
+  expect(defaultSettings.baseUrl).toBe('https://openrouter.ai/api/v1');
+  const legacy = { key: 'test-only', model: 'custom-model', pool: '600519 贵州茅台 持仓' };
+  stored.set('squad-settings', JSON.stringify(legacy));
+  expect(loadSettings()).toEqual({ ...legacy, baseUrl: defaultSettings.baseUrl });
+});
+it('保存时移除 API 地址尾部斜线', () => {
+  saveSettings({ ...defaultSettings, baseUrl: 'https://example.com/v1///' });
+  expect(loadSettings().baseUrl).toBe('https://example.com/v1');
+});
+it.each(['http://example.com/v1', 'example.com', 'https://', 'https://user:pass@example.com', 'https://example.com/?key=value'])('无效 API 地址不覆盖已保存设置 %s', (baseUrl) => {
+  saveSettings(defaultSettings);
+  expect(() => saveSettings({ ...defaultSettings, baseUrl })).toThrow('API 地址');
+  expect(loadSettings()).toEqual(defaultSettings);
+});
 it('默认池严格为四只持仓及十只观察股，保持顺序及港股前导零', () => {
   expect(poolCodes(defaults)).toEqual([
     '601318',
@@ -44,7 +59,7 @@ it.each([legacyDefaultPool, previousDefaultPool])(
   (pool) => {
     const old = { key: 'test-key', model: 'custom-model', pool };
     stored.set('squad-settings', JSON.stringify(old));
-    expect(loadSettings()).toEqual({ ...old, pool: defaults });
+    expect(loadSettings()).toEqual({ ...old, baseUrl: defaultSettings.baseUrl, pool: defaults });
     expect(JSON.parse(stored.get('squad-settings')!).pool).toBe(defaults);
     expect(
       poolEntries(loadSettings().pool).find((entry) => entry.code === '00883')?.manualDividend,

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { loadSettings, saveSettings, type Settings } from './settings';
+import { fetchModels } from './pipeline/models';
 import { registry as builtInRegistry } from './squads/registry';
 import { midRegistry as builtInMids } from './squads/mid';
 import { getRegistry, getMidRegistry, validateMidMembers } from './squads/custom';
@@ -120,7 +121,7 @@ function App() {
         const error = validateMidMembers(midRegistry[selectedSquad].squads, registry);
         if (error) throw new Error(error);
       }
-      if (!runSettings.key.trim()) throw new Error('请先在设置中填写并保存 OpenRouter API 密钥。');
+      if (!runSettings.key.trim()) throw new Error('请先在设置中填写并保存 API 密钥。');
       poolCodes(runSettings.pool);
     } catch (e) {
       setMessage((e as Error).message);
@@ -166,18 +167,12 @@ function App() {
     setLoadingModels(true);
     setMessage('');
     try {
-      const response = await fetch('https://openrouter.ai/api/v1/models');
-      if (!response.ok) throw new Error();
-      const json = await response.json();
-      const list = json.data
-        .map((m: { id: string }) => m.id)
-        .filter((id: string) => id.endsWith(':free'))
-        .sort();
+      const list = await fetchModels(settings);
       if (!list.length) throw new Error();
       setModels(list);
-      setMessage(`已载入 ${list.length} 个免费模型。`);
+      setMessage(`已载入 ${list.length} 个模型。`);
     } catch {
-      setMessage('免费模型列表加载失败，可直接填写模型名称。');
+      setMessage('模型列表加载失败，可直接填写模型名称。');
     } finally {
       setLoadingModels(false);
     }
@@ -538,6 +533,7 @@ function App() {
                   if (!settings.model.trim()) throw new Error('请填写模型名称。');
                   const poolChanged = loadSettings().pool !== settings.pool;
                   saveSettings(settings);
+                  setSettings(loadSettings());
                   if (poolChanged) setRun(undefined);
                   setMessage(
                     poolChanged
@@ -550,7 +546,19 @@ function App() {
               }}
             >
               <h2>模型连接</h2>
-              <label htmlFor="key">OpenRouter API 密钥</label>
+              <label htmlFor="base-url">API 地址</label>
+              <input
+                id="base-url"
+                value={settings.baseUrl}
+                onChange={(e) => {
+                  setSettings({ ...settings, baseUrl: e.target.value });
+                  setModels([]);
+                }}
+              />
+              <p className="subtle">
+                可改为其他 OpenAI 兼容接口（如 AMD Token Factory）；更改后请填写新接口的密钥和模型名称。
+              </p>
+              <label htmlFor="key">API 密钥</label>
               <input
                 id="key"
                 type="password"
@@ -560,9 +568,9 @@ function App() {
                 placeholder="在此输入密钥"
               />
               <p className="subtle">
-                仅向 OpenRouter 发送鉴权请求，请勿在共享设备保存。快照与选题会发送给所选模型。
+                密钥仅发送到此处填写的 API 地址，请勿在共享设备保存。快照与选题会发送给所选模型。
               </p>
-              <label htmlFor="model-list">免费模型</label>
+              <label htmlFor="model-list">模型列表</label>
               <div className="model-row">
                 <select
                   id="model-list"
@@ -579,7 +587,7 @@ function App() {
                   disabled={loadingModels}
                   onClick={loadModels}
                 >
-                  {loadingModels ? '加载中…' : '载入免费列表'}
+                  {loadingModels ? '加载中…' : '载入模型列表'}
                 </button>
               </div>
               <label htmlFor="model">模型名称（可手动覆盖）</label>
